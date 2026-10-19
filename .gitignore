@@ -1,0 +1,8 @@
+node_modules/
+*.log
+*.png
+!assets/*.png
+dist/
+build/
+.DS_Store
+Thumbs.db

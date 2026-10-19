@@ -1,0 +1,17 @@
+{
+  "name": "wordwise",
+  "version": "0.1.0",
+  "description": "划词即时 AI 释义 - 选中即弹窗",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0"
+  },
+  "dependencies": {
+    "selection-hook": "^2.1.1"
+  }
+}

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>WordWise 设置</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1A1C22;
+    color: #E6E8EE;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 13px;
+    padding: 20px 24px 28px;
+    line-height: 1.6;
+  }
+  h2 { font-size: 15px; font-weight: 600; margin: 18px 0 10px; color: #E6E8EE; }
+  h2:first-child { margin-top: 0; }
+  .hint { font-size: 12px; color: #9AA3B2; margin-bottom: 8px; }
+  label { display: block; font-size: 12px; color: #9AA3B2; margin-bottom: 4px; }
+  input[type="text"], input[type="password"], input[type="number"], textarea, select {
+    width: 100%;
+    background: #22242B;
+    border: 0.5px solid #3A3F4A;
+    border-radius: 6px;
+    color: #E6E8EE;
+    padding: 7px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+  }
+  input:focus, textarea:focus { border-color: #378ADD; }
+  textarea { resize: vertical; min-height: 56px; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: #C9CEDA; }
+  .check input { accent-color: #378ADD; }
+  .bar {
+    position: sticky;
+    bottom: -28px;
+    margin: 20px -24px -28px;
+    padding: 12px 24px;
+    background: #1A1C22;
+    border-top: 0.5px solid #2E323C;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  button {
+    background: #185FA5;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 18px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover { background: #378ADD; }
+  #saved { color: #5DCAA5; font-size: 12px; opacity: 0; transition: opacity .3s; }
+  code { background: #22242B; border-radius: 4px; padding: 1px 5px; font-size: 12px; color: #B5D4F4; }
+</style>
+</head>
+<body>
+  <h2>AI 接口（OpenAI 兼容）</h2>
+  <div class="hint">填入任意 OpenAI 格式的服务。默认小米 MiMo：<code>platform.xiaomimimo.com</code> 控制台创建 key。模型默认 <code>mimo-v2.6-pro-ultraspeed</code>（极速版，已自动关闭推理过程）。</div>
+  <div class="row">
+    <div>
+      <label>Base URL</label>
+      <input type="text" id="baseUrl" placeholder="https://api.deepseek.com/v1">
+    </div>
+    <div>
+      <label>模型</label>
+      <input type="text" id="model" placeholder="deepseek-chat">
+    </div>
+  </div>
+  <div style="margin-top:10px">
+    <label>API Key</label>
+    <input type="password" id="apiKey" placeholder="sk-...">
+  </div>
+
+  <h2>提示词与生成</h2>
+  <div class="hint">System Prompt，留空用默认。</div>
+  <textarea id="systemPrompt" style="min-height:72px"></textarea>
+  <div class="row" style="margin-top:10px">
+    <div>
+      <label>temperature（0-2，越低越稳定）</label>
+      <input type="number" id="temperature" min="0" max="2" step="0.1">
+    </div>
+    <div>
+      <label>max_tokens（输出上限）</label>
+      <input type="number" id="maxTokens" min="50" max="4000">
+    </div>
+  </div>
+  <div style="margin-top:10px">
+    <label>请求超时（秒）</label>
+    <input type="number" id="timeoutSec" min="5" max="120" style="width:140px">
+  </div>
+
+  <h2>触发规则</h2>
+  <label>划词长度上限（超过则不弹窗，避免长段落误触发）</label>
+  <input type="number" id="maxLen" min="2" max="2000" style="width:140px">
+  <div style="margin-top:10px">
+    <label>同一段文字重复冷却（秒）</label>
+    <input type="number" id="cooldownSec" min="5" max="600" style="width:140px">
+  </div>
+  <div style="margin-top:10px">
+    <label>弹窗自动关闭（秒）</label>
+    <input type="number" id="hideAfterSec" min="3" max="120" style="width:140px">
+  </div>
+  <div style="margin-top:10px">
+    <label>划词防抖延迟（毫秒，越低弹得越快）</label>
+    <input type="number" id="autoPopupMs" min="80" max="1000" style="width:140px">
+  </div>
+
+  <h2>进程黑名单</h2>
+  <div class="hint">这些程序里划词不弹窗。每行一个，支持模糊匹配，例如 <code>WeChat</code>、<code>mscode</code> 留空则不限制。</div>
+  <textarea id="disabledApps" placeholder="&#10;例如：&#10;WeChat&#10;ms-visualstudio"></textarea>
+
+  <h2>其他</h2>
+  <div class="check">
+    <input type="checkbox" id="enabled"><span>启用划词释义（也可从托盘暂停）</span>
+  </div>
+  <div class="check">
+    <input type="checkbox" id="autoStart"><span>开机自动启动</span>
+  </div>
+
+  <div class="bar">
+    <button id="saveBtn">保存</button>
+    <span id="saved">已保存 ✓</span>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id)
+
+  async function load() {
+    const s = await window.settingsApi.get()
+    $('baseUrl').value = s.baseUrl || ''
+    $('model').value = s.model || ''
+    $('apiKey').value = s.apiKey || ''
+    $('systemPrompt').value = s.systemPrompt || ''
+    $('temperature').value = s.temperature ?? 0.3
+    $('maxTokens').value = s.maxTokens || 800
+    $('timeoutSec').value = s.timeoutSec || 30
+    $('maxLen').value = s.maxLen || 300
+    $('cooldownSec').value = s.cooldownSec || 60
+    $('hideAfterSec').value = s.hideAfterSec || 15
+    $('autoPopupMs').value = s.autoPopupMs || 220
+    $('disabledApps').value = (s.disabledApps || []).join('\n')
+    $('enabled').checked = !!s.enabled
+    $('autoStart').checked = !!s.autoStart
+  }
+
+  $('saveBtn').addEventListener('click', async () => {
+    const patch = {
+      baseUrl: $('baseUrl').value.trim() || 'https://api.xiaomimimo.com/v1',
+      model: $('model').value.trim() || 'mimo-v2.6-pro-ultraspeed',
+      systemPrompt: $('systemPrompt').value.trim(),
+      temperature: Math.min(2, Math.max(0, parseFloat($('temperature').value) || 0.3)),
+      maxTokens: Math.max(50, parseInt($('maxTokens').value) || 800),
+      timeoutSec: Math.max(5, parseInt($('timeoutSec').value) || 30),
+      maxLen: Math.max(2, parseInt($('maxLen').value) || 300),
+      cooldownSec: Math.max(5, parseInt($('cooldownSec').value) || 60),
+      hideAfterSec: Math.max(3, parseInt($('hideAfterSec').value) || 15),
+      autoPopupMs: Math.max(80, parseInt($('autoPopupMs').value) || 220),
+      disabledApps: $('disabledApps').value.split('\n').map(s => s.trim()).filter(Boolean),
+      enabled: $('enabled').checked,
+      autoStart: $('autoStart').checked
+    }
+    const key = $('apiKey').value.trim()
+    if (key) patch.apiKey = key
+    await window.settingsApi.save(patch)
+    $('saved').style.opacity = 1
+    setTimeout(() => ($('saved').style.opacity = 0), 1500)
+  })
+
+  load()
+</script>
+</body>
+</html>

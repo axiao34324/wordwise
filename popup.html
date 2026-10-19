@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    background: transparent;
+    font-family: "Segoe UI", "Microsoft YaHei", -apple-system, sans-serif;
+    -webkit-user-select: none;
+  }
+  .card {
+    margin: 6px;
+    background: #23252C;
+    border: 0.5px solid #3A3F4A;
+    border-radius: 10px;
+    padding: 12px 14px 10px;
+    color: #E6E8EE;
+    font-size: 13px;
+    line-height: 1.65;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  }
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 0.5px solid #3A3F4A;
+  }
+  .term {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: #E6E8EE;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .btn {
+    border: none;
+    background: transparent;
+    color: #9AA3B2;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn:hover { background: #2E323C; color: #E6E8EE; }
+  .body {
+    min-height: 22px;
+    color: #C9CEDA;
+    -webkit-user-select: text;
+    word-break: break-word;
+  }
+  .body .caret {
+    display: inline-block;
+    width: 2px;
+    height: 14px;
+    background: #85B7EB;
+    vertical-align: -2px;
+    margin-left: 1px;
+    animation: blink 0.9s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .placeholder { color: #9AA3B2; }
+  .err { color: #F09595; }
+  .foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    font-size: 11px;
+    color: #6B7280;
+    -webkit-user-select: none;
+  }
+  .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #5DCAA5; margin-right: 5px; vertical-align: 1px; }
+  .dot.cache { background: #FAC775; }
+  .dot.err { background: #F09595; }
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="head">
+      <div class="term" id="term"></div>
+      <div class="actions">
+        <button class="btn" id="copyBtn" title="复制释义">复制</button>
+        <button class="btn" id="closeBtn" title="关闭">✕</button>
+      </div>
+    </div>
+    <div class="body" id="body"><span class="placeholder">正在生成释义…</span></div>
+    <div class="foot" id="foot"><span id="status"></span><span>点击外部关闭</span></div>
+  </div>
+<script>
+  const termEl = document.getElementById('term')
+  const bodyEl = document.getElementById('body')
+  const statusEl = document.getElementById('status')
+  const card = document.getElementById('card')
+
+  let fullText = ''
+  let mode = 'loading'
+
+  function render(text, streaming) {
+    if (streaming) {
+      bodyEl.innerHTML = ''
+      bodyEl.appendChild(document.createTextNode(text))
+      const caret = document.createElement('span')
+      caret.className = 'caret'
+      bodyEl.appendChild(caret)
+    } else {
+      bodyEl.innerHTML = ''
+      bodyEl.appendChild(document.createTextNode(text))
+    }
+    reportSize()
+  }
+
+  function reportSize() {
+    requestAnimationFrame(() => {
+      window.ww.resize(Math.ceil(card.getBoundingClientRect().height) + 12)
+    })
+  }
+
+  function setTerm(t) {
+    termEl.title = t
+    termEl.textContent = t.length > 40 ? t.slice(0, 40) + '…' : t
+  }
+
+  window.ww.onLoading((d) => {
+    mode = 'loading'
+    fullText = ''
+    setTerm(d.text)
+    render('正在生成释义…', false)
+    bodyEl.firstChild && bodyEl.firstChild.classList && bodyEl.firstChild.classList.add('placeholder')
+    statusEl.innerHTML = '<span class="dot" style="background:#85B7EB"></span>AI 生成中'
+    reportSize()
+  })
+
+  window.ww.onResult((d) => {
+    mode = 'done'
+    fullText = d.result
+    setTerm(d.text)
+    render(d.result, false)
+    statusEl.innerHTML = '<span class="dot cache"></span>本地缓存 · 秒出'
+    reportSize()
+  })
+
+  window.ww.onDelta((chunk) => {
+    if (mode === 'done' || mode === 'error') return
+    mode = 'stream'
+    fullText += chunk
+    render(fullText, true)
+  })
+
+  window.ww.onDone(() => {
+    if (mode === 'error') return
+    mode = 'done'
+    render(fullText, false)
+    statusEl.innerHTML = '<span class="dot"></span>完成'
+    reportSize()
+  })
+
+  window.ww.onError((d) => {
+    mode = 'error'
+    bodyEl.innerHTML = ''
+    const el = document.createElement('span')
+    el.className = 'err'
+    el.textContent = '释义失败：' + (d.message || '未知错误')
+    bodyEl.appendChild(el)
+    statusEl.innerHTML = '<span class="dot err"></span>错误'
+    reportSize()
+  })
+
+  document.getElementById('closeBtn').addEventListener('click', () => window.ww.close())
+  document.getElementById('copyBtn').addEventListener('click', () => {
+    if (fullText) window.ww.copy(fullText)
+    const b = document.getElementById('copyBtn')
+    b.textContent = '已复制'
+    setTimeout(() => (b.textContent = '复制'), 1200)
+  })
+
+  window.addEventListener('load', reportSize)
+</script>
+</body>
+</html>
