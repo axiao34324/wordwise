@@ -92,13 +92,22 @@
     </div>
   </div>
   <div style="margin-top:10px">
+    <label>长文本动作用模型（解释/总结/翻译/润色，留空则同主模型）</label>
+    <input type="text" id="actionModel" placeholder="mimo-v2.6-flash">
+  </div>
+  <div style="margin-top:10px">
     <label>请求超时（秒）</label>
     <input type="number" id="timeoutSec" min="5" max="120" style="width:140px">
   </div>
 
   <h2>触发规则</h2>
-  <label>划词长度上限（超过则不弹窗，避免长段落误触发）</label>
-  <input type="number" id="maxLen" min="2" max="2000" style="width:140px">
+  <div class="hint">划词短于等于阈值 → 直接弹释义；超过阈值 → 先弹动作选择（解释 / 总结 / 翻译 / 润色），选完再请求。</div>
+  <label>长文本阈值（超过此字符数弹出动作选择）</label>
+  <input type="number" id="longTextThreshold" min="2" max="200" style="width:140px">
+  <div style="margin-top:10px">
+    <label>划词长度上限（超过则不弹窗，避免误拖整篇；建议 1000-3000）</label>
+    <input type="number" id="maxLen" min="2" max="20000" style="width:140px">
+  </div>
   <div style="margin-top:10px">
     <label>同一段文字重复冷却（秒）</label>
     <input type="number" id="cooldownSec" min="5" max="600" style="width:140px">
@@ -115,6 +124,10 @@
   <h2>进程黑名单</h2>
   <div class="hint">这些程序里划词不弹窗。每行一个，支持模糊匹配，例如 <code>WeChat</code>、<code>mscode</code> 留空则不限制。</div>
   <textarea id="disabledApps" placeholder="&#10;例如：&#10;WeChat&#10;ms-visualstudio"></textarea>
+
+  <h2>历史对话</h2>
+  <div class="hint">长文本划词后针对该段文字的追问记录，保存在本机（<code>conversations.json</code>），最多 60 条。点击进入可查看并继续之前的对话。</div>
+  <button id="openChatBtn" style="background:#2C3038;border:0.5px solid #3A3F4A;color:#C9CEDA">查看历史对话</button>
 
   <h2>其他</h2>
   <div class="check">
@@ -136,12 +149,14 @@
     const s = await window.settingsApi.get()
     $('baseUrl').value = s.baseUrl || ''
     $('model').value = s.model || ''
+    $('actionModel').value = s.actionModel || ''
     $('apiKey').value = s.apiKey || ''
     $('systemPrompt').value = s.systemPrompt || ''
     $('temperature').value = s.temperature ?? 0.3
     $('maxTokens').value = s.maxTokens || 800
     $('timeoutSec').value = s.timeoutSec || 30
     $('maxLen').value = s.maxLen || 300
+    $('longTextThreshold').value = s.longTextThreshold || 15
     $('cooldownSec').value = s.cooldownSec || 60
     $('hideAfterSec').value = s.hideAfterSec || 15
     $('autoPopupMs').value = s.autoPopupMs || 220
@@ -154,11 +169,13 @@
     const patch = {
       baseUrl: $('baseUrl').value.trim() || 'https://api.xiaomimimo.com/v1',
       model: $('model').value.trim() || 'mimo-v2.6-pro-ultraspeed',
+      actionModel: $('actionModel').value.trim() || 'mimo-v2.6-flash',
       systemPrompt: $('systemPrompt').value.trim(),
       temperature: Math.min(2, Math.max(0, parseFloat($('temperature').value) || 0.3)),
       maxTokens: Math.max(50, parseInt($('maxTokens').value) || 800),
       timeoutSec: Math.max(5, parseInt($('timeoutSec').value) || 30),
       maxLen: Math.max(2, parseInt($('maxLen').value) || 300),
+      longTextThreshold: Math.max(2, parseInt($('longTextThreshold').value) || 15),
       cooldownSec: Math.max(5, parseInt($('cooldownSec').value) || 60),
       hideAfterSec: Math.max(3, parseInt($('hideAfterSec').value) || 15),
       autoPopupMs: Math.max(80, parseInt($('autoPopupMs').value) || 220),
@@ -172,6 +189,8 @@
     $('saved').style.opacity = 1
     setTimeout(() => ($('saved').style.opacity = 0), 1500)
   })
+
+  document.getElementById('openChatBtn').addEventListener('click', () => window.settingsApi.openChat())
 
   load()
 </script>

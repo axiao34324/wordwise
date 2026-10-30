@@ -5,6 +5,7 @@ const SelectionHook = require('selection-hook')
 const store = require('./lib/store')
 const cache = require('./lib/cache')
 const llm = require('./lib/llm')
+const convs = require('./lib/conversations')
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -23,6 +24,8 @@ app.commandLine.appendSwitch('disable-gpu-sandbox')
 let tray = null
 let popup = null
 let settingsWin = null
+let chatWin = null
+let chatCtrl = null
 let hook = null
 
 let debounceTimer = null
@@ -32,6 +35,7 @@ let popupReady = false
 
 let lastText = null
 let lastAt = 0
+let currentSel = null
 
 const POPUP_W = 360
 const POPUP_H_DEFAULT = 132
@@ -127,10 +131,11 @@ function hidePopup() {
   if (popup && popup.isVisible()) popup.hide()
 }
 
-function scheduleHide() {
+function scheduleHide(overrideSec) {
   clearTimeout(hideTimer)
   const s = store.get()
-  hideTimer = setTimeout(hidePopup, Math.max(3, s.hideAfterSec || 15) * 1000)
+  const sec = overrideSec || s.hideAfterSec || 15
+  hideTimer = setTimeout(hidePopup, Math.max(3, sec) * 1000)
 }
 
 function abortPending() {
@@ -180,8 +185,10 @@ function pickPosition(data) {
 function trigger(text, data) {
   const s = store.get()
   const now = Date.now()
-  const hit = cache.get(text)
-  // 冷却只拦 API 重复调用；有缓存则照弹不误
+  const threshold = Math.max(2, s.longTextThreshold || 15)
+  const isLong = text.length > threshold
+  const hit = cache.get('explain::' + text)
+  // 冷却只拦 API 重复调用；短词有缓存则照弹不误
   const cooldownMs = Math.max(5, s.cooldownSec || 60) * 1000
   if (text === lastText && now - lastAt < cooldownMs && !hit) return
   lastText = text
@@ -195,22 +202,47 @@ function trigger(text, data) {
   const pos = { x: Math.round(raw.x / scale), y: Math.round(raw.y / scale) }
   console.log('[ww] popup at', JSON.stringify(pos), '(raw', JSON.stringify(raw), 'scale', scale + ')')
 
+  currentSel = { text, pos }
+  showPopupAt(pos.x, pos.y)
+
   const send = (ch, payload) => {
     try { popup.webContents.send(ch, payload) } catch (_) {}
   }
 
-  showPopupAt(pos.x, pos.y)
-  if (hit) {
-    send('ww:result', { text, result: hit.v, cached: true, model: s.model })
+  if (isLong) {
+    // 长文本：先给动作选项，不消耗 API；选择窗给更长的停留时间
+    console.log('[ww] long text (' + text.length + ' > ' + threshold + '), show chooser')
+    send('ww:choose', { text, chars: text.length, threshold, actions: llm.ACTIONS })
+    scheduleHide(Math.max(30, s.hideAfterSec || 15))
     return
   }
 
-  send('ww:loading', { text })
+  runAction('explain', text)
+}
+
+// 统一执行入口：短词（explain）与用户选中的长文本动作共用
+function runAction(action, text) {
+  const s = store.get()
+  // 短词释义用主模型（ultraspeed，快）；长文本动作默认用 flash（长文本更省更快）
+  const model = action === 'explain' ? s.model : (s.actionModel || s.model)
+  const send = (ch, payload) => {
+    try { popup.webContents.send(ch, payload) } catch (_) {}
+  }
+  const key = action + '::' + text
+  const hit = cache.get(key)
+  if (hit) {
+    send('ww:result', { text, action, result: hit.v, cached: true, model })
+    return
+  }
+
+  abortPending()
+  send('ww:loading', { text, action })
   pendingCtrl = new AbortController()
   llm.explain({
     baseUrl: s.baseUrl,
     apiKey: s.apiKey,
-    model: s.model,
+    model,
+    action,
     systemPrompt: s.systemPrompt,
     temperature: s.temperature,
     maxTokens: s.maxTokens,
@@ -219,8 +251,8 @@ function trigger(text, data) {
     ctrl: pendingCtrl,
     onDelta: (d) => send('ww:delta', d),
     onDone: (r) => {
-      cache.set(text, r)
-      send('ww:done', { model: s.model })
+      cache.set(key, r)
+      send('ww:done', { model })
     },
     onError: (e) => send('ww:error', { message: String((e && e.message) || e) })
   })
@@ -246,9 +278,13 @@ function initHook() {
     if (!e || typeof e.x !== 'number') return
     const [px, py] = popup.getPosition()
     const [pw, ph] = popup.getSize()
-    if (e.x < px || e.x > px + pw || e.y < py || e.y > py + ph) {
-      hidePopup()
-    }
+    // 钩子坐标是物理像素，窗口位置/尺寸是 DIP，必须先换算再比对，
+    // 否则点击弹窗内的按钮会被误判为"点在外面"而被提前隐藏（点击丢失）
+    const scale = screen.getDisplayNearestPoint({ x: px, y: py }).scaleFactor || 1
+    const x = e.x / scale
+    const y = e.y / scale
+    const inside = x >= px && x <= px + pw && y >= py && y <= py + ph
+    if (!inside) hidePopup()
   })
 
   hook.start({ enableClipboard: true })
@@ -266,6 +302,7 @@ function createTray() {
       Menu.buildFromTemplate([
         { label: s.enabled ? '暂停划词释义' : '启用划词释义', click: () => { store.save({ enabled: !s.enabled }); rebuild(); if (!store.get().enabled) hidePopup() } },
         { type: 'separator' },
+        { label: '历史对话…', click: () => openChat({}, true) },
         { label: '设置…', click: () => openSettings() },
         { label: '退出', click: () => { app.isQuitting = true; app.quit() } }
       ])
@@ -273,6 +310,56 @@ function createTray() {
   }
   rebuild()
   tray.on('double-click', () => openSettings())
+}
+
+// ---- 对话窗口：划词内容作为上下文，多轮追问，历史可回顾 ----
+function openChat(seed, showHistory) {
+  let conv = null
+  if (seed && seed.convId) conv = convs.get(seed.convId)
+  if (!conv && seed && seed.text) conv = convs.findByText(seed.text) || convs.create(seed.text)
+  if (!conv) {
+    const list = convs.summaries()
+    conv = list.length ? convs.get(list[0].id) : convs.create('')
+  }
+
+  if (chatWin && !chatWin.isDestroyed()) {
+    chatWin.show()
+    chatWin.focus()
+    try { chatWin.webContents.send('chat:load', conv.id) } catch (_) {}
+    if (showHistory) {
+      try { chatWin.webContents.send('chat:showHistory') } catch (_) {}
+    }
+    return
+  }
+
+  chatWin = new BrowserWindow({
+    width: 440,
+    height: 600,
+    minWidth: 360,
+    minHeight: 400,
+    title: 'WordWise 对话',
+    backgroundColor: '#1A1C22',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-chat.js'),
+      contextIsolation: true,
+      sandbox: false,
+      nodeIntegration: false
+    }
+  })
+  attachDiagnostics(chatWin, 'chat')
+  chatWin.loadFile(path.join(__dirname, 'chat.html'))
+  const targetId = conv.id
+  chatWin.webContents.once('did-finish-load', () => {
+    try { chatWin.webContents.send('chat:load', targetId) } catch (_) {}
+    if (showHistory) {
+      try { chatWin.webContents.send('chat:showHistory') } catch (_) {}
+    }
+  })
+  chatWin.on('closed', () => {
+    chatWin = null
+    if (chatCtrl) { try { chatCtrl.abort('window-closed') } catch (_) {} chatCtrl = null }
+  })
 }
 
 function openSettings() {
@@ -303,6 +390,7 @@ function openSettings() {
 app.whenReady().then(() => {
   const s = store.get()
   cache.load()
+  convs.load()
   app.setLoginItemSettings({ openAtLogin: !!s.autoStart })
   store.onAutoStart((next) => {
     app.setLoginItemSettings({ openAtLogin: !!next.autoStart })
@@ -335,7 +423,7 @@ app.on('window-all-closed', (e) => {
 
 ipcMain.on('ww:resize', (_e, height) => {
   if (!popup || typeof height !== 'number') return
-  const h = Math.max(72, Math.min(360, Math.round(height)))
+  const h = Math.max(72, Math.min(460, Math.round(height)))
   const [w] = popup.getSize()
   popup.setSize(w, h)
   const [px, py] = popup.getPosition()
@@ -349,6 +437,13 @@ ipcMain.on('ww:resize', (_e, height) => {
 
 ipcMain.on('ww:close', () => hidePopup())
 
+ipcMain.on('ww:action', (_e, action) => {
+  if (!currentSel) return
+  const a = typeof action === 'string' && action ? action : 'explain'
+  console.log('[ww] action:', a, '| len:', currentSel.text.length)
+  runAction(a, currentSel.text)
+})
+
 ipcMain.on('ww:copy', (_e, text) => {
   if (typeof text === 'string' && text) clipboard.writeText(text)
 })
@@ -360,4 +455,68 @@ ipcMain.handle('settings:save', (_e, patch) => {
   if (clean.apiKey === '____set____') delete clean.apiKey
   store.save(clean)
   return store.get()
+})
+
+// ---- 对话窗口 ----
+ipcMain.on('ww:openChat', (_e, text) => {
+  console.log('[ww] openChat, text len =', String(text || '').length)
+  openChat({ text: String(text || '') })
+})
+
+ipcMain.on('ww:openChatHistory', () => {
+  console.log('[ww] openChatHistory')
+  openChat({}, true)
+})
+
+ipcMain.handle('chat:get', (_e, id) => convs.get(id))
+ipcMain.handle('chat:list', () => convs.summaries())
+ipcMain.handle('chat:new', (_e, text) => convs.create(text))
+ipcMain.handle('chat:delete', (_e, id) => {
+  convs.remove(id)
+  return convs.summaries()
+})
+
+ipcMain.on('chat:send', (_e, payload) => {
+  const convId = payload && payload.convId
+  const content = String((payload && payload.content) || '').trim()
+  const conv = convs.get(convId)
+  if (!conv || !content) return
+  const s = store.get()
+
+  convs.addMessage(convId, 'user', content)
+  if (chatCtrl) { try { chatCtrl.abort('new-turn') } catch (_) {} }
+  chatCtrl = new AbortController()
+
+  const sys =
+    '用户在阅读时划选了下面这段文本，后续问题都围绕它展开：\n"""\n' +
+    conv.text +
+    '\n"""\n\n请结合这段文本回答用户的问题。回答简洁直接、重点突出；不要复述原文，不要客套，不要使用「根据您提供的文本」这类套话。'
+  const messages = [
+    { role: 'system', content: sys },
+    ...convs.get(convId).messages.map((m) => ({ role: m.role, content: m.content }))
+  ]
+
+  const push = (ch, d) => {
+    if (chatWin && !chatWin.isDestroyed()) {
+      try { chatWin.webContents.send(ch, d) } catch (_) {}
+    }
+  }
+
+  console.log('[ww:chat] send, turns =', messages.length - 1, '| model =', s.actionModel || s.model)
+  llm.explain({
+    baseUrl: s.baseUrl,
+    apiKey: s.apiKey,
+    model: s.actionModel || s.model,
+    messages,
+    temperature: s.temperature,
+    maxTokens: s.maxTokens,
+    timeoutSec: s.timeoutSec,
+    ctrl: chatCtrl,
+    onDelta: (d) => push('chat:delta', d),
+    onDone: (r) => {
+      convs.setLastAssistant(convId, r)
+      push('chat:done', { content: r })
+    },
+    onError: (err) => push('chat:error', { message: String((err && err.message) || err) })
+  }).finally(() => { chatCtrl = null })
 })

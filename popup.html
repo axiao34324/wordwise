@@ -52,10 +52,16 @@
   .btn:hover { background: #2E323C; color: #E6E8EE; }
   .body {
     min-height: 22px;
+    max-height: 300px;
+    overflow-y: auto;
     color: #C9CEDA;
     -webkit-user-select: text;
     word-break: break-word;
   }
+  .body::-webkit-scrollbar { width: 6px; }
+  .body::-webkit-scrollbar-track { background: transparent; }
+  .body::-webkit-scrollbar-thumb { background: #3A3F4A; border-radius: 3px; }
+  .body::-webkit-scrollbar-thumb:hover { background: #4A5060; }
   .body .caret {
     display: inline-block;
     width: 2px;
@@ -68,6 +74,65 @@
   @keyframes blink { 50% { opacity: 0; } }
   .placeholder { color: #9AA3B2; }
   .err { color: #F09595; }
+
+  /* ---- 长文本动作选择 ---- */
+  .preview {
+    display: none;
+    position: relative;
+    max-height: 50px;
+    overflow: hidden;
+    color: #8A93A3;
+    font-size: 12px;
+    line-height: 1.55;
+    word-break: break-word;
+    -webkit-user-select: text;
+  }
+  .preview::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 18px;
+    background: linear-gradient(transparent, #23252C);
+  }
+  .opts { display: none; gap: 6px; margin-top: 10px; }
+  /* 自定义需求入口：伪装成输入框，点击打开对话窗口（弹窗本身无焦点，不能直接打字） */
+  .ask {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 6px 9px;
+    background: #22242B;
+    border: 0.5px solid #3A3F4A;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: border-color .12s, background .12s;
+  }
+  .ask:hover { border-color: #4C7BB5; background: #262A32; }
+  .ask .ph { flex: 1; font-size: 12px; color: #5F6675; }
+  .ask:hover .ph { color: #9AA3B2; }
+  .ask .go { font-size: 11px; color: #6B7280; }
+  .ask:hover .go { color: #85B7EB; }
+  .opt {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 6px 2px 5px;
+    background: #2C3038;
+    border: 0.5px solid #3A3F4A;
+    border-radius: 7px;
+    color: #C9CEDA;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+  .opt:hover { background: #35404F; border-color: #4C7BB5; color: #fff; }
+  .opt .h { font-size: 10px; color: #6B7280; }
+  .opt:hover .h { color: #9AA3B2; }
+
   .foot {
     display: flex;
     justify-content: space-between;
@@ -80,6 +145,7 @@
   .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #5DCAA5; margin-right: 5px; vertical-align: 1px; }
   .dot.cache { background: #FAC775; }
   .dot.err { background: #F09595; }
+  .dot.busy { background: #85B7EB; }
 </style>
 </head>
 <body>
@@ -87,9 +153,15 @@
     <div class="head">
       <div class="term" id="term"></div>
       <div class="actions">
-        <button class="btn" id="copyBtn" title="复制释义">复制</button>
+        <button class="btn" id="copyBtn" title="复制结果">复制</button>
         <button class="btn" id="closeBtn" title="关闭">✕</button>
       </div>
+    </div>
+    <div class="preview" id="preview"></div>
+    <div class="opts" id="opts"></div>
+    <div class="ask" id="ask">
+      <span class="ph">或输入你的需求，围绕这段文字提问…</span>
+      <span class="go">对话 →</span>
     </div>
     <div class="body" id="body"><span class="placeholder">正在生成释义…</span></div>
     <div class="foot" id="foot"><span id="status"></span><span>点击外部关闭</span></div>
@@ -98,21 +170,24 @@
   const termEl = document.getElementById('term')
   const bodyEl = document.getElementById('body')
   const statusEl = document.getElementById('status')
+  const previewEl = document.getElementById('preview')
+  const optsEl = document.getElementById('opts')
   const card = document.getElementById('card')
 
   let fullText = ''
   let mode = 'loading'
+  let labels = {}
+  let chooseText = ''
+
+  const askEl = document.getElementById('ask')
 
   function render(text, streaming) {
+    bodyEl.innerHTML = ''
+    bodyEl.appendChild(document.createTextNode(text))
     if (streaming) {
-      bodyEl.innerHTML = ''
-      bodyEl.appendChild(document.createTextNode(text))
       const caret = document.createElement('span')
       caret.className = 'caret'
       bodyEl.appendChild(caret)
-    } else {
-      bodyEl.innerHTML = ''
-      bodyEl.appendChild(document.createTextNode(text))
     }
     reportSize()
   }
@@ -123,32 +198,107 @@
     })
   }
 
-  function setTerm(t) {
-    termEl.title = t
-    termEl.textContent = t.length > 40 ? t.slice(0, 40) + '…' : t
+  function truncate(t, n) {
+    return t.length > n ? t.slice(0, n) + '…' : t
   }
 
+  function setTerm(t) {
+    termEl.title = t
+    termEl.textContent = truncate(t, 40)
+  }
+
+  function showResultView() {
+    previewEl.style.display = 'none'
+    optsEl.style.display = 'none'
+    askEl.style.display = 'none'
+    bodyEl.style.display = 'block'
+  }
+
+  function hideChooser() {
+    previewEl.style.display = 'none'
+    optsEl.style.display = 'none'
+    askEl.style.display = 'none'
+    bodyEl.style.display = 'block'
+  }
+
+  // ---- 阶段一：长文本动作选择 ----
+  window.ww.onChoose((d) => {
+    mode = 'choose'
+    fullText = ''
+    labels = {}
+    chooseText = d.text || ''
+    previewEl.textContent = d.text
+    previewEl.style.display = 'block'
+    bodyEl.style.display = 'none'
+    optsEl.innerHTML = ''
+    for (const a of d.actions || []) {
+      labels[a.id] = a.label
+      const b = document.createElement('button')
+      b.className = 'opt'
+      b.dataset.action = a.id
+      const main = document.createElement('span')
+      main.textContent = a.label
+      const hint = document.createElement('span')
+      hint.className = 'h'
+      hint.textContent = a.hint || ''
+      b.appendChild(main)
+      b.appendChild(hint)
+      b.addEventListener('click', () => {
+        if (mode !== 'choose') return
+        startLoading(a.id)
+        window.ww.choose(a.id)
+      })
+      optsEl.appendChild(b)
+    }
+    optsEl.style.display = 'flex'
+    askEl.style.display = 'flex'
+    setTerm('已选 ' + d.chars + ' 字')
+    statusEl.innerHTML = '<span class="dot busy"></span>选择要执行的操作'
+    reportSize()
+  })
+
+  function startLoading(action) {
+    if (mode !== 'choose') return
+    mode = 'loading'
+    hideChooser()
+    bodyEl.innerHTML = ''
+    const ph = document.createElement('span')
+    ph.className = 'placeholder'
+    ph.textContent = (labels[action] || '生成') + '中…'
+    bodyEl.appendChild(ph)
+    statusEl.innerHTML = '<span class="dot busy"></span>AI 生成中'
+    reportSize()
+  }
+
+  // ---- 阶段二：结果 ----
   window.ww.onLoading((d) => {
     mode = 'loading'
     fullText = ''
-    setTerm(d.text)
-    render('正在生成释义…', false)
-    bodyEl.firstChild && bodyEl.firstChild.classList && bodyEl.firstChild.classList.add('placeholder')
-    statusEl.innerHTML = '<span class="dot" style="background:#85B7EB"></span>AI 生成中'
+    hideChooser()
+    const label = d.action && d.action !== 'explain' ? labels[d.action] : ''
+    setTerm((label ? label + ' · ' : '') + d.text)
+    bodyEl.innerHTML = ''
+    const ph = document.createElement('span')
+    ph.className = 'placeholder'
+    ph.textContent = '正在生成' + (label || '释义') + '…'
+    bodyEl.appendChild(ph)
+    statusEl.innerHTML = '<span class="dot busy"></span>AI 生成中'
     reportSize()
   })
 
   window.ww.onResult((d) => {
     mode = 'done'
     fullText = d.result
-    setTerm(d.text)
+    const label = d.action && d.action !== 'explain' ? labels[d.action] : ''
+    setTerm((label ? label + ' · ' : '') + d.text)
+    showResultView()
     render(d.result, false)
     statusEl.innerHTML = '<span class="dot cache"></span>本地缓存 · 秒出'
     reportSize()
   })
 
   window.ww.onDelta((chunk) => {
-    if (mode === 'done' || mode === 'error') return
+    if (mode === 'done' || mode === 'error' || mode === 'choose') return
     mode = 'stream'
     fullText += chunk
     render(fullText, true)
@@ -164,16 +314,24 @@
 
   window.ww.onError((d) => {
     mode = 'error'
+    showResultView()
     bodyEl.innerHTML = ''
     const el = document.createElement('span')
     el.className = 'err'
-    el.textContent = '释义失败：' + (d.message || '未知错误')
+    el.textContent = '生成失败：' + (d.message || '未知错误')
     bodyEl.appendChild(el)
     statusEl.innerHTML = '<span class="dot err"></span>错误'
     reportSize()
   })
 
   document.getElementById('closeBtn').addEventListener('click', () => window.ww.close())
+
+  // 自定义需求 → 打开独立对话窗口，划词内容作为上下文
+  askEl.addEventListener('click', () => {
+    if (mode !== 'choose' || !chooseText) return
+    window.ww.openChat(chooseText)
+    window.ww.close()
+  })
   document.getElementById('copyBtn').addEventListener('click', () => {
     if (fullText) window.ww.copy(fullText)
     const b = document.getElementById('copyBtn')
