@@ -313,6 +313,16 @@ function runAction(action, text) {
   }
 
   abortPending()
+
+  // 官方通道只对登录用户开放。先在这里拦掉，省一次注定 401 的往返。
+  if (s.provider !== 'byok' && !account.token()) {
+    send('ww:error', {
+      message: '官方通道需要登录；不登录的话，可以在设置里选「自带 Key」用自己的服务',
+      code: 'auth_required'
+    })
+    return
+  }
+
   send('ww:loading', { text, action, isWord })
   pendingCtrl = new AbortController()
   llm.explain({
@@ -668,6 +678,79 @@ ipcMain.handle('account:logout', () => {
   return true
 })
 
+ipcMain.handle('account:plans', () => account.plans())
+ipcMain.handle('account:sendCode', (_e, email) => account.sendCode(String(email || '').trim()))
+ipcMain.handle('account:verifyCode', async (_e, payload) => {
+  const r = await account.verifyCode(String((payload && payload.email) || '').trim(), String((payload && payload.code) || '').trim())
+  if (r.ok) {
+    const m = await account.refresh()
+    if (m.ok) r.user = m.user
+    if (rebuildTray) rebuildTray()
+  }
+  return r
+})
+ipcMain.handle('account:loginPassword', async (_e, payload) => {
+  const r = await account.login(
+    String((payload && payload.email) || '').trim(),
+    String((payload && payload.password) || '')
+  )
+  if (r.ok) {
+    const m = await account.refresh()
+    if (m.ok) r.user = m.user
+    if (rebuildTray) rebuildTray()
+  }
+  return r
+})
+
+// 微信 / QQ：开一个授权窗口，回调页把 token 放在 window.__WW_AUTH__ 里
+ipcMain.handle('account:oauthStart', async (_e, provider) => {
+  const p = provider === 'qq' ? 'qq' : 'wechat'
+  const url = account.oauthStartUrl(p)
+  const win = new BrowserWindow({
+    width: 420,
+    height: 640,
+    title: 'WordWise 登录',
+    autoHideMenuBar: true,
+    backgroundColor: themeBg(store.get().theme),
+    parent: accountWin && !accountWin.isDestroyed() ? accountWin : undefined,
+    webPreferences: { contextIsolation: true, sandbox: false, nodeIntegration: false }
+  })
+
+  const finish = (result) => {
+    if (!win.isDestroyed()) win.close()
+    // 把结果推回账号页
+    if (accountWin && !accountWin.isDestroyed()) {
+      try { accountWin.webContents.send('account:oauthResult', result) } catch (_) {}
+    }
+  }
+
+  win.webContents.on('did-finish-load', async () => {
+    let r = null
+    try {
+      r = await win.webContents.executeJavaScript('window.__WW_AUTH__ || null')
+    } catch (_) {
+      r = null
+    }
+    if (!r) return // 还在第三方页面上，继续等
+    if (r.ok && r.token) {
+      const got = await account.adoptToken(r.token)
+      if (got.ok) {
+        if (rebuildTray) rebuildTray()
+        finish({ ok: true })
+      } else {
+        finish({ ok: false, error: got.error || '登录态校验失败' })
+      }
+    } else {
+      finish({ ok: false, error: r.error || '登录失败' })
+    }
+  })
+
+  win.loadURL(url).catch((err) => {
+    finish({ ok: false, error: '打不开授权页：' + String((err && err.message) || err) })
+  })
+  return { ok: true }
+})
+
 ipcMain.handle('vocab:list', (_e, filter) => vocab.list(filter))
 ipcMain.handle('vocab:count', () => vocab.count())
 ipcMain.handle('vocab:remove', (_e, w) => {
@@ -751,6 +834,15 @@ ipcMain.on('chat:send', (_e, payload) => {
     if (chatWin && !chatWin.isDestroyed()) {
       try { chatWin.webContents.send(ch, d) } catch (_) {}
     }
+  }
+
+  // 同 runAction：官方通道未登录直接给指引，不发请求
+  if (s.provider !== 'byok' && !account.token()) {
+    push('chat:error', {
+      message: '官方通道需要登录；不登录的话，可以在设置里选「自带 Key」用自己的服务',
+      code: 'auth_required'
+    })
+    return
   }
 
   const target = llmTarget(s, 'chat')

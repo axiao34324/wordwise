@@ -12,45 +12,64 @@
     color: var(--text);
     font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
     font-size: 13px;
-    padding: 22px 24px 26px;
     line-height: 1.6;
     -webkit-user-select: none;
     user-select: none;
   }
-  h1 { font-size: 16px; font-weight: 600; letter-spacing: .2px; }
-  .sub { font-size: 11.5px; color: var(--text-4); margin-top: 2px; }
+  .page { padding: 22px 24px 30px; }
   .hidden { display: none !important; }
 
-  /* 登录 / 注册 切换 */
-  .tabs { display: flex; gap: 6px; margin: 18px 0 14px; }
-  .tabs button {
+  header .ttl { font-size: 17px; font-weight: 600; letter-spacing: .2px; }
+  header .sub { font-size: 11.5px; color: var(--text-4); margin-top: 3px; }
+
+  .card {
+    margin-top: 16px;
+    padding: 16px;
+    background: var(--card);
+    border: 0.5px solid var(--border);
+    border-radius: 12px;
+  }
+  .cardTitle { font-size: 12.5px; font-weight: 600; color: var(--text-2); margin-bottom: 12px; }
+
+  /* 第三方登录 */
+  .oauthRow { display: flex; gap: 10px; }
+  .oauth {
     flex: 1;
-    padding: 8px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 38px;
+    border-radius: 9px;
+    border: 0.5px solid var(--border);
+    background: var(--card-2);
+    color: var(--text-2);
     font-size: 12.5px;
     font-family: inherit;
     cursor: pointer;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--card);
-    color: var(--text-3);
-    transition: all .15s;
+    transition: border-color .15s, background .15s;
   }
-  .tabs button:hover { color: var(--text-2); border-color: var(--hover-strong); }
-  .tabs button.on {
-    background: var(--accent-weak);
-    border-color: var(--accent);
-    color: var(--accent);
-    font-weight: 600;
+  .oauth:hover:not(:disabled) { border-color: var(--accent-dim); color: var(--text); }
+  .oauth:disabled { opacity: .42; cursor: not-allowed; }
+  .oauth .ic {
+    width: 20px; height: 20px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 11px; color: #fff; background: #2AAE67;
   }
+  .oauth.qq .ic { background: #12B7F5; }
+
+  .or { display: flex; align-items: center; gap: 10px; margin: 15px 0 2px; color: var(--text-4); font-size: 11px; }
+  .or i { flex: 1; height: 1px; background: var(--border-soft); }
 
   label { display: block; font-size: 11.5px; color: var(--text-3); margin: 12px 0 5px; }
-  input[type="text"], input[type="password"], input[type="email"] {
+  input[type="text"], input[type="email"], input[type="password"] {
     width: 100%;
-    background: var(--card-2);
+    height: 36px;
+    padding: 0 11px;
+    border-radius: 8px;
     border: 0.5px solid var(--border);
-    border-radius: 6px;
+    background: var(--card-2);
     color: var(--text);
-    padding: 8px 10px;
     font-size: 13px;
     font-family: inherit;
     outline: none;
@@ -58,52 +77,106 @@
     user-select: text;
   }
   input:focus { border-color: var(--accent-strong); }
+  #code { letter-spacing: 4px; font-variant-numeric: tabular-nums; }
 
-  button.primary {
+  .rowline { display: flex; gap: 8px; }
+  .rowline input { flex: 1; }
+  .mini {
+    flex-shrink: 0;
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 8px;
+    border: 0.5px solid var(--border);
+    background: var(--card-3);
+    color: var(--text-2);
+    font-size: 12.5px;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .mini:hover:not(:disabled) { background: var(--hover-strong); color: var(--text); }
+  .mini:disabled { opacity: .5; cursor: not-allowed; }
+
+  .primary {
     width: 100%;
+    height: 40px;
     margin-top: 16px;
-    padding: 9px 0;
+    border: none;
+    border-radius: 9px;
     background: var(--accent-bg);
     color: #fff;
-    border: none;
-    border-radius: 7px;
-    font-size: 13px;
+    font-size: 13.5px;
     font-family: inherit;
     cursor: pointer;
     transition: background .15s;
   }
-  button.primary:hover { background: var(--accent-strong); }
-  button.primary:disabled { opacity: .55; cursor: default; }
+  .primary:hover:not(:disabled) { background: var(--accent-strong); }
+  .primary:disabled { opacity: .5; cursor: not-allowed; }
 
-  .note {
-    margin-top: 14px;
-    padding: 10px 12px;
-    background: var(--card-2);
-    border: 0.5px solid var(--border-soft);
-    border-radius: 8px;
-    font-size: 11.5px;
-    color: var(--text-4);
-  }
-  .note b { color: var(--text-2); font-weight: 600; }
-
-  .msg { margin-top: 12px; font-size: 12px; min-height: 18px; }
+  .msg { min-height: 17px; font-size: 11.5px; margin-top: 10px; }
   .msg.err { color: #E4776B; }
   .msg.ok { color: var(--ok); }
+  .msg.dev { color: #D9863F; }
 
-  /* 已登录：套餐卡 */
-  .card {
-    margin-top: 16px;
-    padding: 14px 16px;
-    background: var(--card);
-    border: 0.5px solid var(--border);
-    border-radius: 10px;
+  .footLink { margin-top: 10px; text-align: center; }
+  .link { font-size: 11.5px; color: var(--text-4); cursor: pointer; text-decoration: underline; }
+  .link:hover { color: var(--text-2); }
+
+  /* 购买提示 */
+  .buyNote {
+    margin-top: 10px;
+    padding: 9px 11px;
+    border-radius: 8px;
+    background: var(--card-2);
+    border: 0.5px solid var(--border-soft);
+    font-size: 11.5px;
+    color: var(--text-4);
+    line-height: 1.6;
   }
-  .who { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .mail { font-size: 13px; color: var(--text); word-break: break-all; }
+  .buyNote b { color: var(--text-2); font-weight: 600; }
+
+  /* 套餐 */
+  .plansTitle { font-size: 12.5px; font-weight: 600; color: var(--text-2); margin: 20px 0 2px; }
+  .plansHint { font-size: 11px; color: var(--text-4); margin-bottom: 10px; }
+  .plan {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 14px;
+    border: 0.5px solid var(--border);
+    border-radius: 11px;
+    background: var(--card);
+    margin-bottom: 9px;
+  }
+  .plan.current { border-color: var(--accent); background: var(--accent-weak); }
+  .plan .left { flex: 1; min-width: 0; }
+  .plan .pname { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
+  .plan .pmeta { font-size: 11px; color: var(--text-4); margin-top: 4px; line-height: 1.6; }
+  .plan .right { flex-shrink: 0; text-align: right; }
+  .plan .price { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .plan .price span { font-size: 10.5px; color: var(--text-4); font-weight: 400; }
+  .plan .cta {
+    margin-top: 7px;
+    padding: 4px 13px;
+    border-radius: 14px;
+    border: 0.5px solid var(--accent-dim);
+    background: transparent;
+    color: var(--accent);
+    font-size: 11.5px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .plan .cta:hover { background: var(--accent-weak); }
+  .plan .tagcur { margin-top: 7px; font-size: 11px; color: var(--accent); }
+  .plan .taglow { margin-top: 7px; font-size: 11px; color: var(--text-4); }
+
+  /* 已登录：顶部账号卡 */
+  .who { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .mail { font-size: 13px; word-break: break-all; }
   .badge {
     flex-shrink: 0;
     font-size: 10.5px;
-    padding: 2px 8px;
+    padding: 2px 9px;
     border-radius: 20px;
     border: 1px solid var(--accent-dim);
     color: var(--accent);
@@ -111,55 +184,22 @@
   }
   .badge.free { border-color: var(--border); color: var(--text-3); background: var(--card-2); }
 
-  .meter { height: 6px; border-radius: 4px; background: var(--card-3); overflow: hidden; flex: 1; }
-  .meter i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; border-radius: 4px; }
-  .meter i.warn { background: #D9863F; }
-  .meter i.gone { background: #C05B52; }
-  .mline { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-4); margin-top: 6px; }
-  .mline b { color: var(--text-2); font-weight: 600; }
-
-  /* 额度两行：今日 / 本月 */
   .quota { margin-top: 14px; display: flex; flex-direction: column; gap: 9px; }
   .qrow { display: flex; align-items: center; gap: 10px; }
   .qrow .qlabel { flex-shrink: 0; width: 28px; font-size: 11px; color: var(--text-4); }
   .qrow .qnum { flex-shrink: 0; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
   .qrow .qnum b { color: var(--text); font-weight: 600; }
+  .meter { height: 6px; border-radius: 4px; background: var(--card-3); overflow: hidden; flex: 1; }
+  .meter i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; border-radius: 4px; }
+  .meter i.warn { background: #D9863F; }
+  .meter i.gone { background: #C05B52; }
+  .mline { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-4); margin-top: 7px; }
 
-  .kv { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
-  .kv span {
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 5px;
-    background: var(--card-2);
-    border: 0.5px solid var(--border-soft);
-    color: var(--text-3);
-  }
-
-  h2 { font-size: 13px; font-weight: 600; margin: 20px 0 4px; }
-  .hint { font-size: 11.5px; color: var(--text-4); }
-  .inline { display: flex; gap: 8px; margin-top: 10px; }
-  .inline input { flex: 1; text-transform: uppercase; letter-spacing: .5px; }
-  .inline button {
-    flex-shrink: 0;
-    padding: 0 16px;
-    background: var(--card-3);
-    border: 0.5px solid var(--border);
-    color: var(--text-2);
-    border-radius: 6px;
-    font-size: 12.5px;
-    font-family: inherit;
-    cursor: pointer;
-  }
-  .inline button:hover { background: var(--hover-strong); color: var(--text); }
-  .inline button:disabled { opacity: .5; cursor: default; }
-
-  .foot { margin-top: 22px; display: flex; align-items: center; justify-content: space-between; }
-  .link { font-size: 11.5px; color: var(--text-4); cursor: pointer; text-decoration: underline; }
-  .link:hover { color: var(--text-2); }
+  .foot { margin-top: 20px; display: flex; align-items: center; justify-content: space-between; }
   .ghost {
     font-size: 12px;
-    padding: 5px 12px;
-    border-radius: 6px;
+    padding: 5px 13px;
+    border-radius: 7px;
     background: transparent;
     border: 0.5px solid var(--border);
     color: var(--text-3);
@@ -170,34 +210,71 @@
 </style>
 </head>
 <body>
-  <h1>账号与订阅</h1>
-  <div class="sub" id="subline">登录后额度更高，订阅版可用更强的模型</div>
+<div class="page">
+  <header>
+    <div class="ttl">账号与订阅</div>
+    <div class="sub" id="subline">官方通道需要登录；不登录也能用自己的 API Key</div>
+  </header>
 
-  <!-- 未登录 -->
-  <div id="anonView">
-    <div class="tabs">
-      <button data-mode="login" class="on">登录</button>
-      <button data-mode="register">注册</button>
-    </div>
-    <label>邮箱</label>
-    <input type="email" id="email" placeholder="you@example.com" autocomplete="username">
-    <label>密码</label>
-    <input type="password" id="password" placeholder="至少 6 位" autocomplete="current-password">
-    <button class="primary" id="submitBtn">登录</button>
-    <div class="msg" id="msg"></div>
-    <div class="note">
-      不登录也能用：每天 <b>20 次</b> 试用额度。<br>
-      登录后免费版 <b>100 次/天、1500 次/月</b>；订阅版 <b>2000 次/天</b>，并解锁更细的 Pro 模型。
-    </div>
-  </div>
+  <!-- ============ 未登录 ============ -->
+  <section id="anonView">
+    <div class="card">
+      <div class="cardTitle">登录 / 注册</div>
 
-  <!-- 已登录 -->
-  <div id="userView" class="hidden">
+      <div class="oauthRow">
+        <button class="oauth" id="wxBtn" disabled title="需在微信开放平台申请网站应用">
+          <span class="ic">微</span>微信登录
+        </button>
+        <button class="oauth qq" id="qqBtn" disabled title="需在 QQ 互联申请网站应用">
+          <span class="ic">Q</span>QQ 登录
+        </button>
+      </div>
+
+      <div class="or"><i></i><span>或使用邮箱</span><i></i></div>
+
+      <label>邮箱</label>
+      <div class="rowline">
+        <input type="email" id="email" placeholder="you@example.com" autocomplete="email">
+        <button class="mini" id="sendBtn">获取验证码</button>
+      </div>
+
+      <div id="codeWrap" class="hidden">
+        <label>6 位验证码</label>
+        <input type="text" id="code" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code">
+      </div>
+
+      <button class="primary" id="verifyBtn" disabled>登录 / 注册</button>
+      <div class="msg" id="msg"></div>
+
+      <div class="footLink"><span class="link" id="pwdToggle">用密码登录（老账号）</span></div>
+      <div id="pwdBox" class="hidden">
+        <label>密码</label>
+        <input type="password" id="password" placeholder="至少 6 位" autocomplete="current-password">
+        <button class="primary" id="pwdBtn">用密码登录</button>
+      </div>
+    </div>
+
+    <div class="plansTitle">订阅方案</div>
+    <div class="plansHint" id="plansHintAnon">登录后可开通；官方通道按下方额度计费</div>
+    <div id="plansAnon"></div>
+
+    <div class="buyNote">
+      不登录只能用<b>自带 API Key</b>：在设置里选「自带 Key」，填你自己的 OpenAI 兼容服务，
+      费用由服务商结算，不经我们。
+    </div>
+  </section>
+
+  <!-- ============ 已登录 ============ -->
+  <section id="userView" class="hidden">
     <div class="card">
       <div class="who">
-        <div class="mail" id="userMail"></div>
+        <div>
+          <div class="mail" id="userMail"></div>
+          <div class="sub" id="userSub"></div>
+        </div>
         <div class="badge" id="planBadge">免费版</div>
       </div>
+
       <div class="quota">
         <div class="qrow">
           <span class="qlabel">今日</span>
@@ -214,28 +291,33 @@
         <span id="leftText"></span>
         <span id="rateText"></span>
       </div>
-      <div class="kv" id="modelTags"></div>
-      <div class="mline" style="margin-top:10px"><span id="expireText"></span></div>
     </div>
 
-    <h2>兑换订阅码</h2>
-    <div class="hint">拿到订阅码后填在这里，立即生效</div>
-    <div class="inline">
-      <input type="text" id="code" placeholder="WW-XXXX-XXXX">
-      <button id="redeemBtn">兑换</button>
+    <div class="plansTitle">订阅方案</div>
+    <div class="plansHint" id="plansHintUser"></div>
+    <div id="plansUser"></div>
+
+    <div class="card">
+      <div class="cardTitle">兑换订阅码</div>
+      <div class="rowline">
+        <input type="text" id="rcode" placeholder="WW-STD-30D-XXXX-XXXX">
+        <button class="mini" id="redeemBtn">兑换</button>
+      </div>
+      <div class="msg" id="msg2"></div>
     </div>
-    <div class="msg" id="msg2"></div>
 
     <div class="foot">
       <span class="link" id="refreshLink">刷新额度</span>
       <button class="ghost" id="logoutBtn">退出登录</button>
     </div>
-  </div>
+  </section>
+</div>
 
 <script>
   const $ = (id) => document.getElementById(id)
-  let mode = 'login'
-  let busy = false
+  let state = { loggedIn: false }
+  let plansData = { plans: [], oauth: { wechat: false, qq: false }, mail: false }
+  let countdown = null
 
   function setMsg(el, text, kind) {
     const node = $(el)
@@ -243,29 +325,107 @@
     node.className = 'msg' + (kind ? ' ' + kind : '')
   }
 
-  function applyTheme(t) {
-    document.documentElement.dataset.theme = t
-  }
-  window.accountApi.onTheme(applyTheme)
+  window.accountApi.onTheme((t) => { document.documentElement.dataset.theme = t })
 
+  // ---------- 套餐 ----------
+  const MODEL_LABEL = { 'mimo-v2.6-flash': 'Flash', 'mimo-v2.6-pro': 'Pro' }
+  const RANK = { free: 0, standard: 1, pro: 2 }
+
+  function planMeta(p) {
+    const models = (p.models || []).map((m) => MODEL_LABEL[m] || m).join(' + ')
+    return p.daily + ' 次/天 · ' + p.monthly + ' 次/月 · 每分钟 ' + p.perMinute + '<br>' + models +
+      '　·　' + (p.tagline || '')
+  }
+
+  function renderPlans(containerId, currentPlan) {
+    const box = $(containerId)
+    box.innerHTML = ''
+    for (const p of plansData.plans || []) {
+      const row = document.createElement('div')
+      row.className = 'plan' + (p.id === currentPlan ? ' current' : '')
+
+      const left = document.createElement('div')
+      left.className = 'left'
+      const nm = document.createElement('div')
+      nm.className = 'pname'
+      nm.textContent = p.name
+      const meta = document.createElement('div')
+      meta.className = 'pmeta'
+      meta.innerHTML = planMeta(p)
+      left.appendChild(nm)
+      left.appendChild(meta)
+
+      const right = document.createElement('div')
+      right.className = 'right'
+      const price = document.createElement('div')
+      price.className = 'price'
+      price.innerHTML = p.priceMonth ? '¥' + p.priceMonth + '<span> /月</span>' : '¥0'
+      right.appendChild(price)
+
+      if (!state.loggedIn) {
+        const cta = document.createElement('button')
+        cta.className = 'cta'
+        cta.textContent = p.priceMonth ? '订阅' : '免费'
+        cta.addEventListener('click', () => {
+          if (!p.priceMonth) return
+          $('email').focus()
+          setMsg('msg', '请先用邮箱登录，登录后即可开通订阅', 'dev')
+        })
+        right.appendChild(cta)
+      } else if (p.id === currentPlan) {
+        const tag = document.createElement('div')
+        tag.className = 'tagcur'
+        tag.textContent = '当前方案'
+        right.appendChild(tag)
+      } else if ((RANK[p.id] || 0) < (RANK[currentPlan] || 0)) {
+        const tag = document.createElement('div')
+        tag.className = 'taglow'
+        tag.textContent = '已包含'
+        right.appendChild(tag)
+      } else {
+        const cta = document.createElement('button')
+        cta.className = 'cta'
+        cta.textContent = '升级'
+        cta.addEventListener('click', () => {
+          $('rcode').scrollIntoView({ behavior: 'smooth', block: 'center' })
+          $('rcode').focus()
+          setMsg('msg2', '支付通道接入中：付款后把拿到的订阅码填在这里即可', 'dev')
+        })
+        right.appendChild(cta)
+      }
+
+      row.appendChild(left)
+      row.appendChild(right)
+      box.appendChild(row)
+    }
+  }
+
+  // ---------- 渲染已登录 ----------
   function render(s) {
-    if (!s || !s.loggedIn) {
-      $('anonView').classList.remove('hidden')
-      $('userView').classList.add('hidden')
-      $('subline').textContent = '登录后额度更高，订阅版可用更强的模型'
+    state = s && s.loggedIn ? s : { loggedIn: false }
+    const logged = !!state.loggedIn
+
+    $('anonView').classList.toggle('hidden', logged)
+    $('userView').classList.toggle('hidden', !logged)
+    $('subline').textContent = logged
+      ? '已登录，划词即可使用官方通道'
+      : '官方通道需要登录；不登录也能用自己的 API Key'
+
+    if (!logged) {
+      renderPlans('plansAnon', null)
       return
     }
-    $('anonView').classList.add('hidden')
-    $('userView').classList.remove('hidden')
-    $('subline').textContent = '已登录，划词即可使用'
 
-    $('userMail').textContent = s.email || '(未命名账号)'
-    const pro = s.plan === 'pro'
-    $('planBadge').textContent = s.planLabel || (pro ? '订阅版' : '免费版')
-    $('planBadge').className = 'badge' + (pro ? '' : ' free')
+    const name = state.email || state.nickname || '(未命名账号)'
+    $('userMail').textContent = name
+    $('userSub').textContent = state.provider === 'wechat' ? '微信登录' : state.provider === 'qq' ? 'QQ 登录' : '邮箱登录'
 
-    const limit = s.dailyLimit || 0
-    const used = s.used || 0
+    const label = state.planName || (state.plan === 'pro' ? '专业版' : state.plan === 'standard' ? '标准版' : '免费版')
+    $('planBadge').textContent = label
+    $('planBadge').className = 'badge' + (state.plan === 'free' ? ' free' : '')
+
+    const limit = state.dailyLimit || 0
+    const used = state.used || 0
     const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0
     const fill = $('meterDay')
     fill.style.width = pct + '%'
@@ -273,9 +433,8 @@
     $('dayUsed').textContent = used
     $('dayLimit').textContent = limit
 
-    // 本月额度：匿名用户没有这项，整行隐藏
-    const mGoal = s.monthlyLimit || 0
-    const mUsed = s.usedMonth || 0
+    const mGoal = state.monthlyLimit || 0
+    const mUsed = state.usedMonth || 0
     if (mGoal > 0) {
       $('monthRow').classList.remove('hidden')
       const mp = Math.min(100, Math.round((mUsed / mGoal) * 100))
@@ -288,7 +447,6 @@
       $('monthRow').classList.add('hidden')
     }
 
-    // 哪个先到头就以哪个为准
     const dayLeft = Math.max(0, limit - used)
     const monthLeft = mGoal > 0 ? Math.max(0, mGoal - mUsed) : Infinity
     $('leftText').textContent =
@@ -299,99 +457,141 @@
           : monthLeft < dayLeft
             ? '本月剩余 ' + monthLeft + ' 次'
             : '今日剩余 ' + dayLeft + ' 次'
-    $('rateText').textContent = s.perMinute ? '每分钟 ≤ ' + s.perMinute + ' 次' : ''
+    $('rateText').textContent = state.perMinute ? '每分钟 ≤ ' + state.perMinute + ' 次' : ''
 
-    const tags = $('modelTags')
-    tags.innerHTML = ''
-    const NICE = { 'mimo-v2.6-flash': 'MiMo Flash', 'mimo-v2.6-pro': 'MiMo Pro' }
-    for (const m of s.models || []) {
-      const el = document.createElement('span')
-      el.textContent = NICE[m] || m
-      tags.appendChild(el)
-    }
+    $('plansHintUser').textContent = state.expireAt
+      ? '当前' + label + '，到期 ' + new Date(state.expireAt).toLocaleDateString('zh-CN')
+      : '当前' + label + '，额度每日 0 点重置'
 
-    $('expireText').textContent =
-      s.expireAt && s.daysLeft !== null
-        ? '订阅到期：' + new Date(s.expireAt).toLocaleDateString('zh-CN') + '（还剩 ' + s.daysLeft + ' 天）'
-        : pro
-          ? ''
-          : '免费版长期有效，日额度每日 0 点重置'
+    renderPlans('plansUser', state.plan)
   }
 
-  async function boot() {
-    const s = await window.accountApi.state()
-    render(s)
-    if (s && s.loggedIn) {
-      const r = await window.accountApi.refresh()
-      if (r && r.ok) render({ loggedIn: true, email: s.email, ...r.user })
-      else if (r && r.status === 401) render({ loggedIn: false })
-    }
+  // ---------- 邮箱验证码 ----------
+  function startCountdown(sec) {
+    let left = sec
+    const btn = $('sendBtn')
+    btn.disabled = true
+    btn.textContent = left + 's'
+    clearInterval(countdown)
+    countdown = setInterval(() => {
+      left--
+      if (left <= 0) {
+        clearInterval(countdown)
+        btn.disabled = false
+        btn.textContent = '重新发送'
+      } else {
+        btn.textContent = left + 's'
+      }
+    }, 1000)
   }
 
-  // ---- 登录 / 注册 ----
-  for (const b of document.querySelectorAll('.tabs button')) {
-    b.addEventListener('click', () => {
-      mode = b.dataset.mode
-      for (const x of document.querySelectorAll('.tabs button')) x.classList.toggle('on', x === b)
-      $('submitBtn').textContent = mode === 'login' ? '登录' : '注册'
-      $('password').setAttribute('autocomplete', mode === 'login' ? 'current-password' : 'new-password')
-      setMsg('msg', '')
-    })
-  }
-
-  async function submit() {
-    if (busy) return
+  $('sendBtn').addEventListener('click', async () => {
     const email = $('email').value.trim()
-    const password = $('password').value
-    if (!email || !email.includes('@')) return setMsg('msg', '请填写正确的邮箱', 'err')
-    if (password.length < 6) return setMsg('msg', '密码至少 6 位', 'err')
-
-    busy = true
-    $('submitBtn').disabled = true
-    setMsg('msg', mode === 'login' ? '正在登录…' : '正在注册…')
-    const r = mode === 'login'
-      ? await window.accountApi.login(email, password)
-      : await window.accountApi.register(email, password)
-    busy = false
-    $('submitBtn').disabled = false
-
+    if (!email || !email.includes('@')) return setMsg('msg', '先填一个正确的邮箱', 'err')
+    $('sendBtn').disabled = true
+    setMsg('msg', '正在发送…')
+    const r = await window.accountApi.sendCode(email)
     if (!r || !r.ok) {
-      setMsg('msg', (r && r.error) || '操作失败，请稍后重试', 'err')
+      setMsg('msg', (r && r.error) || '发送失败', 'err')
+      $('sendBtn').disabled = false
       return
     }
+    $('codeWrap').classList.remove('hidden')
+    $('verifyBtn').disabled = false
+    $('code').focus()
+    startCountdown(60)
+    if (r.dev && r.devCode) {
+      setMsg('msg', '邮件服务未配置（开发模式），验证码：' + r.devCode, 'dev')
+    } else {
+      setMsg('msg', '验证码已发送，' + (r.ttlMin || 10) + ' 分钟内有效', 'ok')
+    }
+  })
+
+  $('code').addEventListener('input', () => {
+    const v = $('code').value.replace(/\D/g, '').slice(0, 6)
+    $('code').value = v
+    $('verifyBtn').disabled = v.length !== 6
+  })
+
+  $('verifyBtn').addEventListener('click', async () => {
+    const email = $('email').value.trim()
+    const code = $('code').value.trim()
+    if (code.length !== 6) return setMsg('msg', '验证码是 6 位数字', 'err')
+    $('verifyBtn').disabled = true
+    setMsg('msg', '正在校验…')
+    const r = await window.accountApi.verifyCode(email, code)
+    $('verifyBtn').disabled = false
+    if (!r || !r.ok) return setMsg('msg', (r && r.error) || '登录失败', 'err')
+    clearInterval(countdown)
+    setMsg('msg', '')
+    render({ loggedIn: true, ...r.user })
+    setMsg('msg2', r.created ? '注册成功，已登录' : '登录成功', 'ok')
+  })
+
+  // ---------- 密码登录 ----------
+  $('pwdToggle').addEventListener('click', () => {
+    const box = $('pwdBox')
+    box.classList.toggle('hidden')
+    $('pwdToggle').textContent = box.classList.contains('hidden') ? '用密码登录（老账号）' : '改用邮箱验证码'
+    if (!box.classList.contains('hidden')) $('password').focus()
+  })
+
+  $('pwdBtn').addEventListener('click', async () => {
+    const email = $('email').value.trim()
+    const password = $('password').value
+    if (!email || !password) return setMsg('msg', '邮箱和密码都要填', 'err')
+    setMsg('msg', '正在登录…')
+    const r = await window.accountApi.loginPassword(email, password)
+    if (!r || !r.ok) return setMsg('msg', (r && r.error) || '登录失败', 'err')
     $('password').value = ''
     setMsg('msg', '')
-    render({ loggedIn: true, email, ...r.user })
-    setMsg('msg2', mode === 'login' ? '登录成功' : '注册成功，已自动登录', 'ok')
-  }
+    render({ loggedIn: true, ...r.user })
+    setMsg('msg2', '登录成功', 'ok')
+  })
 
-  $('submitBtn').addEventListener('click', submit)
-  for (const id of ['email', 'password']) {
-    $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') submit() })
+  // ---------- 微信 / QQ ----------
+  function bindOauth(id, provider) {
+    $(id).addEventListener('click', async () => {
+      const r = await window.accountApi.oauthStart(provider)
+      if (!r || !r.ok) setMsg('msg', (r && r.error) || '打不开授权页', 'err')
+    })
   }
+  bindOauth('wxBtn', 'wechat')
+  bindOauth('qqBtn', 'qq')
 
-  // ---- 兑换 ----
+  window.accountApi.onOauthResult((r) => {
+    if (r && r.ok) {
+      window.accountApi.state().then((s) => {
+        render(s)
+        setMsg('msg2', '登录成功', 'ok')
+      })
+    } else {
+      setMsg('msg', (r && r.error) || '第三方登录失败', 'err')
+    }
+  })
+
+  // ---------- 兑换 / 刷新 / 退出 ----------
   $('redeemBtn').addEventListener('click', async () => {
-    const code = $('code').value.trim()
+    const code = $('rcode').value.trim()
     if (!code) return setMsg('msg2', '请输入订阅码', 'err')
     $('redeemBtn').disabled = true
     setMsg('msg2', '正在兑换…')
     const r = await window.accountApi.redeem(code)
     $('redeemBtn').disabled = false
     if (!r || !r.ok) return setMsg('msg2', (r && r.error) || '兑换失败', 'err')
-    $('code').value = ''
-    setMsg('msg2', '兑换成功，已升级为' + (r.user && r.user.planLabel ? r.user.planLabel : '订阅版'), 'ok')
+    $('rcode').value = ''
+    setMsg('msg2', '兑换成功，当前 ' + ((r.user && r.user.planName) || '订阅版'), 'ok')
     const s = await window.accountApi.state()
     render(s)
   })
-  $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('redeemBtn').click() })
+  $('rcode').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('redeemBtn').click() })
 
   $('refreshLink').addEventListener('click', async () => {
     setMsg('msg2', '正在刷新…')
     const r = await window.accountApi.refresh()
     if (!r || !r.ok) return setMsg('msg2', (r && r.error) || '刷新失败', 'err')
     setMsg('msg2', '已刷新', 'ok')
-    render({ loggedIn: true, email: r.user.email, ...r.user })
+    render({ loggedIn: true, ...r.user })
   })
 
   $('logoutBtn').addEventListener('click', async () => {
@@ -399,6 +599,27 @@
     setMsg('msg2', '')
     render({ loggedIn: false })
   })
+
+  // ---------- 启动 ----------
+  async function boot() {
+    plansData = (await window.accountApi.plans()) || plansData
+    // 微信/QQ 没配置就明确置灰，别让人点了才发现不行
+    const stamp = (id, ok, provider) => {
+      const b = $(id)
+      b.disabled = !ok
+      b.title = ok ? '' : '需先在' + (provider === 'wechat' ? '微信开放平台' : 'QQ 互联') + '申请网站应用，配好后再开放'
+    }
+    stamp('wxBtn', !!(plansData.oauth && plansData.oauth.wechat), 'wechat')
+    stamp('qqBtn', !!(plansData.oauth && plansData.oauth.qq), 'qq')
+
+    const s = await window.accountApi.state()
+    render(s)
+    if (s && s.loggedIn) {
+      const r = await window.accountApi.refresh()
+      if (r && r.ok) render({ loggedIn: true, ...r.user })
+      else if (r && r.status === 401) render({ loggedIn: false })
+    }
+  }
 
   boot()
 </script>

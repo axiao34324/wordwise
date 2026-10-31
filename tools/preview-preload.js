@@ -13,38 +13,84 @@ const plan = argVal('ww-preview-plan', 'pro')
 const ANON = {
   loggedIn: false,
   email: '',
+  nickname: '',
+  provider: '',
   plan: 'free',
+  planName: '免费版',
   planLabel: '免费版',
   used: 0,
   dailyLimit: 0,
   remaining: 0,
+  usedMonth: 0,
+  monthlyLimit: 0,
+  remainingMonth: 0,
+  perMinute: 0,
   models: [],
   expireAt: null,
   daysLeft: null
 }
 
+// 三档：free / standard / pro，数字与后端 PLANS 保持一致
+const TIER = {
+  free: {
+    plan: 'free', planName: '免费版', label: '免费版',
+    daily: 100, used: 61, monthly: 1500, usedMonth: 1240, perMinute: 15,
+    models: ['mimo-v2.6-flash'], days: 0
+  },
+  standard: {
+    plan: 'standard', planName: '标准版', label: '标准版',
+    daily: 1200, used: 137, monthly: 15000, usedMonth: 4890, perMinute: 30,
+    models: ['mimo-v2.6-flash', 'mimo-v2.6-pro'], days: 94
+  },
+  pro: {
+    plan: 'pro', planName: '专业版', label: '专业版',
+    daily: 3000, used: 137, monthly: 40000, usedMonth: 4890, perMinute: 60,
+    models: ['mimo-v2.6-flash', 'mimo-v2.6-pro'], days: 71
+  }
+}
+
+const t = TIER[plan] || TIER.pro
 const USER = {
   loggedIn: true,
   email: 'a.xiao@example.com',
-  plan: plan === 'free' ? 'free' : 'pro',
-  planLabel: plan === 'free' ? '免费版' : '订阅版',
-  used: 137,
-  dailyLimit: plan === 'free' ? 100 : 2000,
-  remaining: plan === 'free' ? 0 : 1863,
-  usedMonth: plan === 'free' ? 1240 : 137,
-  monthlyLimit: plan === 'free' ? 1500 : 30000,
-  remainingMonth: plan === 'free' ? 260 : 29863,
-  perMinute: plan === 'free' ? 15 : 60,
-  models: plan === 'free' ? ['mimo-v2.6-flash'] : ['mimo-v2.6-flash', 'mimo-v2.6-pro'],
-  expireAt: plan === 'free' ? null : Date.now() + 86400000 * 71,
-  daysLeft: plan === 'free' ? null : 71
+  nickname: '',
+  provider: 'email',
+  plan: t.plan,
+  planName: t.planName,
+  planLabel: t.label,
+  used: t.used,
+  dailyLimit: t.daily,
+  remaining: Math.max(0, t.daily - t.used),
+  usedMonth: t.usedMonth,
+  monthlyLimit: t.monthly,
+  remainingMonth: Math.max(0, t.monthly - t.usedMonth),
+  perMinute: t.perMinute,
+  models: t.models,
+  expireAt: t.days ? Date.now() + 86400000 * t.days : null,
+  daysLeft: t.days || null
 }
 
 const current = () => (state === 'user' ? USER : ANON)
 
+const PLANS = [
+  { id: 'free', name: '免费版', tagline: '日常阅读够用', daily: 100, monthly: 1500, perMinute: 15, models: ['mimo-v2.6-flash'], priceMonth: 0, priceYear: 0 },
+  { id: 'standard', name: '标准版', tagline: '解锁 Pro 模型，长文与追问问得更细', daily: 1200, monthly: 15000, perMinute: 30, models: ['mimo-v2.6-flash', 'mimo-v2.6-pro'], priceMonth: 29, priceYear: 299 },
+  { id: 'pro', name: '专业版', tagline: '给每天长时间阅读与写作的人', daily: 3000, monthly: 40000, perMinute: 60, models: ['mimo-v2.6-flash', 'mimo-v2.6-pro'], priceMonth: 79, priceYear: 799 }
+]
+
 contextBridge.exposeInMainWorld('accountApi', {
   onTheme: () => {},
+  onOauthResult: () => {},
   state: async () => current(),
+  plans: async () => ({
+    plans: PLANS,
+    oauth: { wechat: !!(process.env.PREVIEW_OAUTH), qq: false },
+    mail: false
+  }),
+  sendCode: async () => ({ ok: true, dev: true, devCode: '202966', ttlMin: 10 }),
+  verifyCode: async () => ({ ok: true, user: USER, created: true }),
+  loginPassword: async () => ({ ok: true, user: USER }),
+  oauthStart: async () => ({ ok: true }),
   refresh: async () => ({ ok: true, user: current() }),
   register: async () => ({ ok: true, user: USER }),
   login: async () => ({ ok: true, user: USER }),

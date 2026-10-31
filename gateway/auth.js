@@ -13,7 +13,7 @@ const crypto = require('node:crypto')
 const DATA_DIR = process.env.WW_DATA_DIR || path.join(process.cwd(), 'data')
 const USERS_FILE = path.join(DATA_DIR, 'users.json')
 
-const SECRET = process.env.WW_SECRET || 'ww-hmac-7c1e9b34a2d84f60'
+const SECRET = process.env.WW_SECRET || 'PUT-YOUR-SECRET-HERE'
 const TOKEN_TTL = 30 * 24 * 3600 * 1000
 
 // ---- 存储 ----
@@ -161,29 +161,68 @@ function addCost(user, cost) {
 
 // ---- 权益 ----
 
-// 额度设计依据（可按运营需要直接改这里）：
-//   free 100/天 —— 普通人一天认真读十几篇材料也到不了，够用且不像"施舍"
-//   free 1500/月 —— 兜住"每天刚好用满"的成本上限，约 ¥0.8/月/人
-//   pro  2000/天 —— 重度用户/写作者连续使用也不会撞墙
-//   pro  30000/月 —— 防止日额度被脚本攒成天量，同时远超真人可能
+// 官方通道只有三档：免费版 + 两档订阅。
+// 未登录用户不走官方通道（只能用自带的 Key），所以这里没有 "匿名" 这一档。
+//
+// 额度设计依据（改这里就能改额度与定价，客户端通过 /v1/plans 读取同名表）：
+//   free     100/天、1500/月   —— 普通人一天读十几篇也用不到，日常不会被打断
+//   standard 1200/天、15000/月 —— 标准订阅，含 pro 模型
+//   pro      3000/天、40000/月 —— 重度使用，每分钟额度也更高
+// 月额度是成本闸门：按 pro 单次约 ¥0.0011 估，standard 用满约 ¥16、pro 约 ¥44，
+// 都在定价的 50%~60% 以内，留出毛利空间。
 const PLANS = {
-  free: { daily: 100, monthly: 1500, perMinute: 15, models: ['mimo-v2.6-flash'] },
-  pro: { daily: 2000, monthly: 30000, perMinute: 60, models: ['mimo-v2.6-flash', 'mimo-v2.6-pro'] }
+  free: {
+    name: '免费版',
+    daily: 100,
+    monthly: 1500,
+    perMinute: 15,
+    models: ['mimo-v2.6-flash'],
+    priceMonth: 0,
+    priceYear: 0,
+    tagline: '日常阅读够用'
+  },
+  standard: {
+    name: '标准版',
+    daily: 1200,
+    monthly: 15000,
+    perMinute: 30,
+    models: ['mimo-v2.6-flash', 'mimo-v2.6-pro'],
+    priceMonth: 29,
+    priceYear: 299,
+    tagline: '解锁 Pro 模型，长文与追问问得更细'
+  },
+  pro: {
+    name: '专业版',
+    daily: 3000,
+    monthly: 40000,
+    perMinute: 60,
+    models: ['mimo-v2.6-flash', 'mimo-v2.6-pro'],
+    priceMonth: 79,
+    priceYear: 799,
+    tagline: '给每天长时间阅读与写作的人'
+  }
 }
 
-// 匿名用户没有账号可记，按 IP 计，额度给得窄一些：够体验，不够长期白用
-const ANON = { daily: 20, monthly: 0, perMinute: 3, models: ['mimo-v2.6-flash'] }
-
+// 订阅过期的降级顺序：专业 → 标准 → 免费
 function planOf(user) {
   if (!user) return 'free'
-  if (user.plan === 'pro' && (!user.expireAt || user.expireAt > Date.now())) return 'pro'
+  const p = user.plan
+  const alive = !user.expireAt || user.expireAt > Date.now()
+  if (alive && (p === 'pro' || p === 'standard')) return p
   return 'free'
 }
 
 function entitlements(user) {
   const plan = planOf(user)
   const p = PLANS[plan]
-  return { plan, dailyLimit: p.daily, monthlyLimit: p.monthly, perMinute: p.perMinute, models: p.models }
+  return {
+    plan,
+    planName: p.name,
+    dailyLimit: p.daily,
+    monthlyLimit: p.monthly,
+    perMinute: p.perMinute,
+    models: p.models
+  }
 }
 
 // 额度检查：按顺序返回第一个撞上的限制
@@ -224,8 +263,11 @@ function publicView(user) {
   const u = usageOf(user)
   return {
     id: user.id,
-    email: user.email,
+    email: user.email || '',
+    nickname: user.nickname || '',
+    provider: user.provider || 'email',
     plan: e.plan,
+    planName: e.planName,
     expireAt: user.expireAt || null,
     // 旧字段保留，客户端老版本仍能显示"今日 x/y"
     used: u.dayN,
@@ -292,11 +334,11 @@ function byToken(token) {
 
 const CODES_FILE = path.join(DATA_DIR, 'codes.json')
 
-// 首次启动时种子：各一份，演示与自助试用够用
+// 首次启动时种两张：一张标准版、一张专业版，各只能用一次。
+// 这两张是给你自己验收和送给朋友试用的，不要长期留在线上。
 const SEED_CODES = {
-  'WW-30D-TRIAL': 30,
-  'WW-90D-TRIAL': 90,
-  'WW-365D-TRIAL': 365
+  'WW-STD-30D-TRIAL': { days: 30, plan: 'standard' },
+  'WW-PRO-30D-TRIAL': { days: 30, plan: 'pro' }
 }
 
 let codeCache = null
@@ -309,8 +351,8 @@ function readCodes() {
     if (!codeCache.codes) codeCache.codes = {}
   } catch (_) {
     codeCache = { codes: {} }
-    for (const [code, days] of Object.entries(SEED_CODES)) {
-      codeCache.codes[code] = { days, used: false, createdAt: Date.now(), seed: true }
+    for (const [code, rec] of Object.entries(SEED_CODES)) {
+      codeCache.codes[code] = { ...rec, used: false, createdAt: Date.now(), seed: true }
     }
     writeCodes()
   }
@@ -326,10 +368,12 @@ function writeCodes() {
   }
 }
 
-// 生成订阅码：WW-<天数>D-XXXX-XXXX，去掉容易看错的 0/O/1/I
-function mintCodes(days, count) {
+// 生成订阅码：WW-<档位>-<天数>D-XXXX-XXXX，去掉容易看错的 0/O/1/I
+function mintCodes(days, count, plan = 'standard') {
   const d = Math.max(1, Math.min(3650, parseInt(days, 10) || 30))
   const n = Math.max(1, Math.min(200, parseInt(count, 10) || 1))
+  const p = PLANS[plan] ? plan : 'standard'
+  const tag = p === 'pro' ? 'PRO' : 'STD'
   const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   const db = readCodes()
   const made = []
@@ -338,10 +382,10 @@ function mintCodes(days, count) {
     do {
       const part = () =>
         Array.from({ length: 4 }, () => ALPHABET[crypto.randomInt(ALPHABET.length)]).join('')
-      code = 'WW-' + d + 'D-' + part() + '-' + part()
+      code = 'WW-' + tag + '-' + d + 'D-' + part() + '-' + part()
     } while (db.codes[code])
-    db.codes[code] = { days: d, used: false, createdAt: Date.now() }
-    made.push({ code, days: d })
+    db.codes[code] = { days: d, plan: p, used: false, createdAt: Date.now() }
+    made.push({ code, days: d, plan: p, planName: PLANS[p].name })
   }
   writeCodes()
   return made
@@ -356,6 +400,8 @@ function codeStats() {
     used: all.filter((c) => c.used).length
   }
 }
+
+const RANK = { free: 0, standard: 1, pro: 2 }
 
 function redeem(user, code) {
   const key = String(code || '').trim().toUpperCase()
@@ -372,9 +418,159 @@ function redeem(user, code) {
   // 续期而不是重置：多次兑换可以叠加
   const base = user.expireAt && user.expireAt > Date.now() ? user.expireAt : Date.now()
   user.expireAt = base + rec.days * 24 * 3600 * 1000
-  user.plan = 'pro'
+  // 降级码不覆盖已有的更高档：拿着专业版的人兑一张标准版码，只会延长到期时间
+  const target = rec.plan || 'pro'
+  const cur = planOf(user)
+  if (RANK[target] >= RANK[cur]) user.plan = target
   writeUsers()
-  return { user: publicView(user), days: rec.days }
+  return { user: publicView(user), days: rec.days, plan: user.plan }
+}
+
+// ---- 邮箱验证码登录 ----
+//
+// 不做密码：输入邮箱 → 收 6 位码 → 验证通过即登录，没账号就顺手建一个。
+// 密码那套留着给老账号（/auth/login），新用户不必再记密码。
+//
+// 限制：同邮箱 60 秒一次、每天 10 次；验证码 10 分钟有效、最多试 5 次。
+
+const MAIL_FILE = path.join(DATA_DIR, 'mail-codes.json')
+const CODE_TTL_MS = 10 * 60 * 1000
+const CODE_MAX_TRIES = 5
+
+let mailCache = null
+
+function readMail() {
+  if (mailCache) return mailCache
+  ensureDir()
+  try {
+    mailCache = JSON.parse(fs.readFileSync(MAIL_FILE, 'utf8'))
+    if (!mailCache.codes) mailCache.codes = {}
+  } catch (_) {
+    mailCache = { codes: {} }
+  }
+  return mailCache
+}
+
+function writeMail() {
+  ensureDir()
+  try {
+    fs.writeFileSync(MAIL_FILE, JSON.stringify(mailCache, null, 2))
+  } catch (e) {
+    console.error('[auth] 验证码写入失败', e.message)
+  }
+}
+
+function isValidEmail(mail) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)
+}
+
+function issueEmailCode(email) {
+  const mail = normalizeEmail(email)
+  if (!isValidEmail(mail)) return { error: '邮箱格式不对' }
+
+  const db = readMail()
+  const now = Date.now()
+  const rec = db.codes[mail]
+
+  if (rec && now - rec.sentAt < 60 * 1000) {
+    return { error: '刚发过一次，' + Math.ceil((60 - (now - rec.sentAt) / 1000)) + ' 秒后再试' }
+  }
+  if (rec && rec.day === today() && rec.count >= 10) {
+    return { error: '今天发送次数已用完，明天再试' }
+  }
+
+  const code = String(crypto.randomInt(100000, 1000000))
+  db.codes[mail] = {
+    code,
+    exp: now + CODE_TTL_MS,
+    sentAt: now,
+    tries: 0,
+    day: today(),
+    count: rec && rec.day === today() ? rec.count + 1 : 1
+  }
+  writeMail()
+  return { ok: true, code, ttlMin: CODE_TTL_MS / 60000 }
+}
+
+// 校验通过则登录 / 自动注册
+function verifyEmailCode(email, code) {
+  const mail = normalizeEmail(email)
+  const db = readMail()
+  const rec = db.codes[mail]
+  if (!rec) return { error: '请先获取验证码' }
+  if (Date.now() > rec.exp) return { error: '验证码已过期，请重新获取' }
+  if (rec.tries >= CODE_MAX_TRIES) return { error: '错误次数太多，请重新获取验证码' }
+  if (String(code || '').trim() !== rec.code) {
+    rec.tries++
+    writeMail()
+    return { error: '验证码不对' }
+  }
+
+  delete db.codes[mail]
+  writeMail()
+
+  const users = readUsers()
+  let user = users.users[mail]
+  let created = false
+  if (!user) {
+    user = {
+      id: crypto.randomUUID(),
+      email: mail,
+      verified: true,
+      plan: 'free',
+      expireAt: null,
+      createdAt: Date.now(),
+      usage: { day: today(), dayN: 0, month: thisMonth(), monthN: 0, costDay: 0, costMonth: 0 }
+    }
+    users.users[mail] = user
+    writeUsers()
+    created = true
+  }
+  return {
+    token: signToken({ uid: user.id, exp: Date.now() + TOKEN_TTL }),
+    user: publicView(user),
+    created
+  }
+}
+
+// ---- 第三方登录（微信 / QQ） ----
+//
+// 以 "provider:openid" 作为主键存在 users 里。这类账号没有邮箱，
+// 也就拿不到验证码找回路径，所以 uid 必须稳定在 openid 上。
+function loginOauth(provider, openId, profile = {}) {
+  if (!provider || !openId) return { error: '第三方登录信息不完整' }
+  const db = readUsers()
+  const key = provider + ':' + openId
+  let user = db.users[key]
+  let created = false
+
+  if (!user) {
+    user = {
+      id: crypto.randomUUID(),
+      email: '',
+      nickname: profile.nickname || provider + ' 用户',
+      avatar: profile.avatar || '',
+      provider,
+      openId,
+      verified: true,
+      plan: 'free',
+      expireAt: null,
+      createdAt: Date.now(),
+      usage: { day: today(), dayN: 0, month: thisMonth(), monthN: 0, costDay: 0, costMonth: 0 }
+    }
+    db.users[key] = user
+    writeUsers()
+    created = true
+  } else if (profile.nickname && profile.nickname !== user.nickname) {
+    user.nickname = profile.nickname
+    writeUsers()
+  }
+
+  return {
+    token: signToken({ uid: user.id, exp: Date.now() + TOKEN_TTL }),
+    user: publicView(user),
+    created
+  }
 }
 
 // 金额小到 0.0005 这个量级，保留 6 位小数才看得见
@@ -392,22 +588,22 @@ function stats() {
   let requestsToday = 0
   let requestsMonth = 0
   let costMonth = 0
-  let pro = 0
+  const byPlan = { free: 0, standard: 0, pro: 0 }
   const top = []
   for (const u of list) {
     const x = usageOf(u)
     requestsToday += x.dayN
     requestsMonth += x.monthN
     costMonth += x.costMonth
-    if (planOf(u) === 'pro') pro++
+    byPlan[planOf(u)]++
     if (x.monthN > 0) top.push({ email: u.email, monthN: x.monthN, costMonth: x.costMonth })
   }
   top.sort((a, b) => b.monthN - a.monthN)
   const round = round6
   return {
     users: list.length,
-    pro,
-    free: list.length - pro,
+    byPlan,
+    paid: byPlan.standard + byPlan.pro,
     requestsToday,
     requestsMonth,
     costMonth: round(costMonth),
@@ -415,9 +611,22 @@ function stats() {
   }
 }
 
+// 全量导出：发布前先 GET 一次存到本地，万一沙箱重建把 data 目录清掉，还有一份底稿
+function exportAll() {
+  const db = readUsers()
+  return {
+    exportedAt: Date.now(),
+    users: Object.values(db.users),
+    codes: codeStats()
+  }
+}
+
 module.exports = {
   register,
   login,
+  issueEmailCode,
+  verifyEmailCode,
+  loginOauth,
   byToken,
   byId,
   redeem,
@@ -434,6 +643,6 @@ module.exports = {
   stats,
   mintCodes,
   codeStats,
-  PLANS,
-  ANON
+  exportAll,
+  PLANS
 }

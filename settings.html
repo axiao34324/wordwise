@@ -17,6 +17,39 @@
   }
   h2 { font-size: 14px; font-weight: 600; margin: 22px 0 8px; color: var(--text); }
   h2:first-child { margin-top: 0; }
+
+  /* 顶部账号卡：一眼看到身份 + 今天还剩多少 */
+  .accCard {
+    padding: 14px 16px 15px;
+    background: var(--card);
+    border: 0.5px solid var(--border);
+    border-radius: 12px;
+  }
+  .accTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .accId { min-width: 0; }
+  .accMail { font-size: 13px; color: var(--text); word-break: break-all; }
+  .accSub { font-size: 11px; color: var(--text-4); margin-top: 3px; }
+  .accBadge {
+    flex-shrink: 0;
+    font-size: 10.5px;
+    padding: 2px 9px;
+    border-radius: 20px;
+    border: 1px solid var(--accent-dim);
+    color: var(--accent);
+    background: var(--accent-weak);
+  }
+  .accBadge.free { border-color: var(--border); color: var(--text-3); background: var(--card-2); }
+  .accBadge.none { border-color: var(--border); color: var(--text-4); background: var(--card-2); }
+  .accMeters { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .accMeters:empty { display: none; }
+  .accRow { display: flex; align-items: center; gap: 9px; }
+  .accRow .k { flex-shrink: 0; width: 26px; font-size: 11px; color: var(--text-4); }
+  .accRow .m { flex: 1; height: 5px; border-radius: 4px; background: var(--card-3); overflow: hidden; }
+  .accRow .m i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+  .accRow .m i.warn { background: #D9863F; }
+  .accRow .m i.gone { background: #C05B52; }
+  .accRow .n { flex-shrink: 0; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .accBtn { margin-top: 13px; width: 100%; padding: 8px 0; border-radius: 8px; font-size: 12.5px; }
   .hint { font-size: 11px; color: var(--text-4); margin-bottom: 8px; }
   label { display: block; font-size: 12px; color: var(--text-3); margin-bottom: 4px; }
   input[type="text"], input[type="password"], input[type="number"], textarea, select {
@@ -127,9 +160,17 @@
 </style>
 </head>
 <body>
-  <h2>账号与订阅</h2>
-  <div class="hint" id="accHint">检查中…</div>
-  <button class="ghost" id="openAccountBtn" style="margin-top:8px">打开账号与订阅</button>
+  <div class="accCard">
+    <div class="accTop">
+      <div class="accId">
+        <div class="accMail" id="accMail">未登录</div>
+        <div class="accSub" id="accSub">官方通道需要登录；不登录也能用自己的 Key</div>
+      </div>
+      <span class="accBadge" id="accBadge">—</span>
+    </div>
+    <div class="accMeters" id="accMeters"></div>
+    <button class="ghost accBtn" id="openAccountBtn">管理账号与订阅 →</button>
+  </div>
 
   <h2>界面主题</h2>
   <div class="hint">点击即时切换，弹窗、对话、词库同步生效</div>
@@ -311,7 +352,7 @@
     $('byokBox').classList.toggle('hidden', prov !== 'byok')
     $('provHint').textContent =
       prov === 'official'
-        ? '官方通道已配好，开箱即用'
+        ? '官方通道需要登录；免费版每天 100 次，订阅版额度更高'
         : '使用你自己的 OpenAI 兼容服务，费用由服务商结算'
   }
   for (const b of document.querySelectorAll('#provSeg button')) {
@@ -351,25 +392,79 @@
       $('vocabCount').textContent = n
     } catch (_) {}
 
-    // 账号状态：不要求登录，只如实显示当前额度
+    // 账号卡：身份 + 今日/本月额度，一眼看完
     try {
-      const a = await window.settingsApi.accountState()
-      $('accHint').textContent = a.loggedIn
-        ? a.email + ' · ' + (a.planLabel || '免费版') +
-          ' · 今日 ' + (a.used || 0) + '/' + (a.dailyLimit || 0) +
-          (a.monthlyLimit ? ' · 本月 ' + (a.usedMonth || 0) + '/' + a.monthlyLimit : '')
-        : '未登录 · 每天 20 次试用额度（登录后免费版 100 次/天、1500 次/月）'
+      renderAccount(await window.settingsApi.accountState())
     } catch (_) {
-      $('accHint').textContent = '未登录 · 每天 20 次试用额度'
+      renderAccount({ loggedIn: false })
     }
+  }
+
+  function meterRow(label, used, limit) {
+    const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0
+    const cls = pct >= 100 ? 'gone' : pct >= 80 ? 'warn' : ''
+    return (
+      '<div class="accRow"><span class="k">' + label + '</span>' +
+      '<span class="m"><i class="' + cls + '" style="width:' + pct + '%"></i></span>' +
+      '<span class="n">' + used + ' / ' + limit + '</span></div>'
+    )
+  }
+
+  // Pro 模型只对订阅用户开放。免费版选了也调不动（服务端 403 plan_required），
+  // 所以直接在选项上置灰，别让人选了才发现不行。
+  let allowProModel = false
+
+  function gateModels(allowPro) {
+    allowProModel = !!allowPro
+    for (const id of ['officialModel', 'officialActionModel']) {
+      const sel = $(id)
+      for (const opt of sel.options) {
+        if (!opt.dataset.base) opt.dataset.base = opt.textContent
+        const isPro = opt.value === 'mimo-v2.6-pro'
+        if (!isPro) continue
+        opt.disabled = !allowPro
+        opt.textContent = opt.dataset.base + (allowPro ? '' : '（需订阅）')
+      }
+      if (!allowPro && sel.value === 'mimo-v2.6-pro') sel.value = 'mimo-v2.6-flash'
+    }
+  }
+
+  function renderAccount(a) {
+    if (!a || !a.loggedIn) {
+      $('accMail').textContent = '未登录'
+      $('accSub').textContent = '官方通道需要登录；不登录也能用自己的 Key'
+      $('accBadge').textContent = '未登录'
+      $('accBadge').className = 'accBadge none'
+      $('accMeters').innerHTML = ''
+      gateModels(false)
+      return
+    }
+    $('accMail').textContent = a.email || a.nickname || '(未命名账号)'
+    const label = a.planName || (a.plan === 'pro' ? '专业版' : a.plan === 'standard' ? '标准版' : '免费版')
+    $('accSub').textContent =
+      '每分钟 ≤ ' + (a.perMinute || 0) + ' 次' +
+      (a.expireAt ? ' · 到期 ' + new Date(a.expireAt).toLocaleDateString('zh-CN') : '')
+    $('accBadge').textContent = label
+    $('accBadge').className = 'accBadge' + (a.plan === 'free' ? ' free' : '')
+
+    let html = meterRow('今日', a.used || 0, a.dailyLimit || 0)
+    if (a.monthlyLimit) html += meterRow('本月', a.usedMonth || 0, a.monthlyLimit)
+    $('accMeters').innerHTML = html
+
+    gateModels(a.plan === 'pro' || a.plan === 'standard')
   }
 
   $('saveBtn').addEventListener('click', async () => {
     const onBtn = document.querySelector('#provSeg button.on')
+    // 兜底：万一选项被置灰前已经选中了 pro，也不把用不了的模型存进去
+    const modelOf = (id) => {
+      const v = $(id).value || 'mimo-v2.6-flash'
+      return !allowProModel && v === 'mimo-v2.6-pro' ? 'mimo-v2.6-flash' : v
+    }
     const patch = {
       provider: onBtn ? onBtn.dataset.p : 'official',
-      officialModel: $('officialModel').value || 'mimo-v2.6-flash',
-      officialActionModel: $('officialActionModel').value || 'mimo-v2.6-flash',
+      officialModel: modelOf('officialModel'),
+      officialActionModel: modelOf('officialActionModel'),
       baseUrl: $('baseUrl').value.trim() || 'https://api.qnaigc.com/v1',
       model: $('model').value.trim() || 'mimo-v2.6-flash',
       actionModel: $('actionModel').value.trim() || 'mimo-v2.6-flash',
