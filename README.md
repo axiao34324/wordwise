@@ -11,24 +11,34 @@ Windows 桌面常驻程序：在**任意应用**（微信、Word、浏览器、P
 - **按长度分流**：≤15 字直接出释义；超过阈值先给动作选择（解释 / 总结 / 翻译 / 润色），确认后才发请求
 - **自定义追问**：长文本可打开独立对话窗口，划词内容作为上下文多轮提问；会话落盘，随时从「历史对话」回顾继续
 - **Markdown 渲染**：对话结果支持代码块、列表、标题、引用等，流式输出
-- **模型分级**：短词释义用 `mimo-v2.6-pro-ultraspeed`，长文本动作用 `mimo-v2.6-flash`，可分别配置
+- **账号与订阅**：注册/登录、每日额度、订阅码兑换；免费版与订阅版可用模型不同
+- **两种使用方式**：官方通道（开箱即用，Key 在服务端）或自带 Key（你自己的 OpenAI 兼容服务）
+- **四套主题**：深岩 / 宣纸 / 石墨 / 青瓷，原生标题栏与滚动条跟着一起变
+- **英语词库**：划选英文单词可一键收录，支持筛选与导出 CSV
 - **选区定位**：弹窗出现在选区末尾下方，物理像素 → DIP 自动换算，支持多显示器与高 DPI
 - **LRU 缓存**：最近 500 条结果本地持久化（按「动作 + 原文」为键），重复查询秒出
-- **可视化配置**：API 地址 / 模型 / 提示词 / 温度 / max_tokens / 冷却 / 阈值等全部可在设置界面调整
 
 ## 技术栈
 
 Electron 31 + selection-hook（N-API 原生模块）+ Node 原生 https（OpenAI 兼容 Chat Completions API）
 
 ```
-├── main.js               # 主进程：托盘常驻、全局钩子、弹窗定位、对话窗口
+├── main.js               # 主进程：托盘常驻、全局钩子、弹窗定位、各窗口
 ├── lib/llm.js            # LLM 调用（Node https 直连 + SSE 流式解析 + 动作提示词）
+├── lib/official.js       # 官方通道配置（服务地址、应用令牌、模型白名单）
+├── lib/account.js        # 账号：注册/登录、令牌持久化、额度与兑换
 ├── lib/store.js          # 设置持久化
 ├── lib/cache.js          # LRU 结果缓存
 ├── lib/conversations.js  # 对话会话持久化（最多 60 条）
-├── popup.html            # 弹窗 UI（选择 / 结果两阶段）
+├── lib/vocab.js          # 英语词库持久化
+├── popup.html            # 弹窗 UI（选择 / 结果 / 额度引导）
 ├── chat.html             # 对话窗口（Markdown 渲染 + 历史面板）
+├── account.html          # 账号与订阅界面
+├── vocab.html            # 英语词库界面
 ├── settings.html         # 设置界面
+├── theme.css             # 四套主题变量
+├── gateway/              # 转发服务（后端，见 gateway/README.md）
+├── tools/                # 界面预览截图、端到端测试脚本
 └── preload*.js           # contextBridge 安全桥接
 ```
 
@@ -39,11 +49,29 @@ npm install
 npm start
 ```
 
-托盘图标右键 → 设置，填入你的 OpenAI 兼容 API（Base URL / Key / 模型名）。默认适配小米 MiMo。
+默认走**官方通道**，装完即可划词，无需配置。额度用完或想要更强的模型时，托盘右键 →
+「账号与订阅」登录或兑换订阅码。想接自己的服务，在设置里选「自带 Key」。
 
-长文本划词会在弹窗里给出四个动作与一个「输入你的需求」入口，后者打开独立对话窗口（划词内容作为上下文，支持多轮与历史回顾）。
+## 后端
+
+客户端不持有任何上游 API Key —— 所有模型请求都发到 `gateway/`（自建转发服务），
+由它带上游密钥转发，并负责账号、额度与套餐权限。详见 [gateway/README.md](gateway/README.md)。
+
+## 测试
+
+```bash
+# 官方通道端到端（真实请求 + 令牌 + 额度核对）
+npx electron tools/test-llm.js
+
+# 账号模块端到端（注册/登录/兑换/权限）
+npx electron tools/test-account.js
+
+# 界面截图（不开托盘，假数据渲染，capturePage 存图）
+npx electron tools/preview.js account.html out.png rock user 460 660
+```
 
 ## 注意
 
 - 首次运行 Windows 可能弹出 SmartScreen 提示，属正常现象（未签名）
 - 沙箱/受限环境下若出现白屏，主进程已内置 `in-process-gpu` 兜底
+- 账号数据目前存在后端的 JSON 文件里，多实例部署前需换成数据库

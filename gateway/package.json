@@ -1,0 +1,13 @@
+{
+  "name": "ww-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WordWise 七牛转发服务：把上游密钥留在服务端",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
