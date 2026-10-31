@@ -111,12 +111,19 @@
   }
   .badge.free { border-color: var(--border); color: var(--text-3); background: var(--card-2); }
 
-  .meter { margin-top: 14px; height: 6px; border-radius: 4px; background: var(--card-3); overflow: hidden; }
+  .meter { height: 6px; border-radius: 4px; background: var(--card-3); overflow: hidden; flex: 1; }
   .meter i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; border-radius: 4px; }
   .meter i.warn { background: #D9863F; }
   .meter i.gone { background: #C05B52; }
   .mline { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-4); margin-top: 6px; }
   .mline b { color: var(--text-2); font-weight: 600; }
+
+  /* 额度两行：今日 / 本月 */
+  .quota { margin-top: 14px; display: flex; flex-direction: column; gap: 9px; }
+  .qrow { display: flex; align-items: center; gap: 10px; }
+  .qrow .qlabel { flex-shrink: 0; width: 28px; font-size: 11px; color: var(--text-4); }
+  .qrow .qnum { flex-shrink: 0; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .qrow .qnum b { color: var(--text); font-weight: 600; }
 
   .kv { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
   .kv span {
@@ -180,7 +187,7 @@
     <div class="msg" id="msg"></div>
     <div class="note">
       不登录也能用：每天 <b>20 次</b> 试用额度。<br>
-      登录后免费版 <b>80 次/天</b>；订阅版 <b>2000 次/天</b>，并解锁更细的 Pro 模型。
+      登录后免费版 <b>100 次/天、1500 次/月</b>；订阅版 <b>2000 次/天</b>，并解锁更细的 Pro 模型。
     </div>
   </div>
 
@@ -191,10 +198,21 @@
         <div class="mail" id="userMail"></div>
         <div class="badge" id="planBadge">免费版</div>
       </div>
-      <div class="meter"><i id="meterFill"></i></div>
+      <div class="quota">
+        <div class="qrow">
+          <span class="qlabel">今日</span>
+          <div class="meter"><i id="meterDay"></i></div>
+          <span class="qnum"><b id="dayUsed">0</b> / <span id="dayLimit">0</span></span>
+        </div>
+        <div class="qrow" id="monthRow">
+          <span class="qlabel">本月</span>
+          <div class="meter"><i id="meterMonth"></i></div>
+          <span class="qnum"><b id="monthUsed">0</b> / <span id="monthLimit">0</span></span>
+        </div>
+      </div>
       <div class="mline">
-        <span>今日已用 <b id="usedNum">0</b> / <span id="limitNum">0</span></span>
         <span id="leftText"></span>
+        <span id="rateText"></span>
       </div>
       <div class="kv" id="modelTags"></div>
       <div class="mline" style="margin-top:10px"><span id="expireText"></span></div>
@@ -249,13 +267,39 @@
     const limit = s.dailyLimit || 0
     const used = s.used || 0
     const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0
-    const fill = $('meterFill')
+    const fill = $('meterDay')
     fill.style.width = pct + '%'
     fill.className = pct >= 100 ? 'gone' : pct >= 80 ? 'warn' : ''
+    $('dayUsed').textContent = used
+    $('dayLimit').textContent = limit
 
-    $('usedNum').textContent = used
-    $('limitNum').textContent = limit
-    $('leftText').textContent = pct >= 100 ? '今日额度已用完' : '剩余 ' + (s.remaining ?? Math.max(0, limit - used)) + ' 次'
+    // 本月额度：匿名用户没有这项，整行隐藏
+    const mGoal = s.monthlyLimit || 0
+    const mUsed = s.usedMonth || 0
+    if (mGoal > 0) {
+      $('monthRow').classList.remove('hidden')
+      const mp = Math.min(100, Math.round((mUsed / mGoal) * 100))
+      const mf = $('meterMonth')
+      mf.style.width = mp + '%'
+      mf.className = mp >= 100 ? 'gone' : mp >= 80 ? 'warn' : ''
+      $('monthUsed').textContent = mUsed
+      $('monthLimit').textContent = mGoal
+    } else {
+      $('monthRow').classList.add('hidden')
+    }
+
+    // 哪个先到头就以哪个为准
+    const dayLeft = Math.max(0, limit - used)
+    const monthLeft = mGoal > 0 ? Math.max(0, mGoal - mUsed) : Infinity
+    $('leftText').textContent =
+      dayLeft === 0
+        ? '今日额度已用完，明日 0 点重置'
+        : monthLeft === 0
+          ? '本月额度已用完'
+          : monthLeft < dayLeft
+            ? '本月剩余 ' + monthLeft + ' 次'
+            : '今日剩余 ' + dayLeft + ' 次'
+    $('rateText').textContent = s.perMinute ? '每分钟 ≤ ' + s.perMinute + ' 次' : ''
 
     const tags = $('modelTags')
     tags.innerHTML = ''
@@ -271,7 +315,7 @@
         ? '订阅到期：' + new Date(s.expireAt).toLocaleDateString('zh-CN') + '（还剩 ' + s.daysLeft + ' 天）'
         : pro
           ? ''
-          : '免费版长期有效，用量每日 0 点重置'
+          : '免费版长期有效，日额度每日 0 点重置'
   }
 
   async function boot() {

@@ -83,32 +83,96 @@ function verifyToken(token) {
   }
 }
 
-// ---- 每天用量 ----
+// ---- 用量与额度 ----
+//
+// 三个计数器各管一件事，缺一个都会出问题：
+//   日额度   —— 防止一天之内刷爆（体验层面的"每天能用多少"）
+//   月额度   —— 防止靠日额度攒出天量（成本层面的兜底）
+//   每分钟   —— 防止脚本化高频调用把上游打到限流（稳定性）
+//
+// 都按月/日自然边界重置，重置逻辑放在 usageOf 里，谁读谁重置。
 
 function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
-// 返回该用户今天的已用次数（顺带把跨天的计数归零）
-function usedToday(user) {
-  if (!user.usage || user.usage.day !== today()) {
-    user.usage = { day: today(), n: 0 }
-  }
-  return user.usage.n
+function thisMonth() {
+  return new Date().toISOString().slice(0, 7)
 }
 
-function bumpUsage(user) {
-  usedToday(user)
-  user.usage.n++
+// 拿到（并在跨天/跨月时重置）用量记录
+function usageOf(user) {
+  const day = today()
+  const month = thisMonth()
+  const u = user.usage || {}
+  // 兼容旧数据：老版本只有 { day, n }
+  if (u.dayN == null && typeof u.n === 'number') u.dayN = u.n
+
+  if (u.day !== day) {
+    u.day = day
+    u.dayN = 0
+    u.costDay = 0
+  }
+  if (u.month !== month) {
+    u.month = month
+    u.monthN = 0
+    u.costMonth = 0
+  }
+  if (u.dayN == null) u.dayN = 0
+  if (u.monthN == null) u.monthN = 0
+  if (u.costDay == null) u.costDay = 0
+  if (u.costMonth == null) u.costMonth = 0
+  user.usage = u
+  return u
+}
+
+function usedToday(user) {
+  return usageOf(user).dayN
+}
+
+function usedThisMonth(user) {
+  return usageOf(user).monthN
+}
+
+// 记一次调用。tokens 只用于成本核算（估算值，不追求精确）
+function bumpUsage(user, cost) {
+  const u = usageOf(user)
+  u.dayN++
+  u.monthN++
+  if (cost) {
+    u.costDay += cost.yuan || 0
+    u.costMonth += cost.yuan || 0
+    u.tokensDay = (u.tokensDay || 0) + (cost.tokens || 0)
+  }
+  writeUsers()
+}
+
+// 只调整成本，不动计数：用于流结束后把预估成本换成实际成本
+function addCost(user, cost) {
+  if (!user || !cost) return
+  const u = usageOf(user)
+  u.costDay += cost.yuan || 0
+  u.costMonth += cost.yuan || 0
+  u.tokensDay = (u.tokensDay || 0) + (cost.tokens || 0)
+  if (u.costDay < 0) u.costDay = 0
+  if (u.costMonth < 0) u.costMonth = 0
   writeUsers()
 }
 
 // ---- 权益 ----
 
+// 额度设计依据（可按运营需要直接改这里）：
+//   free 100/天 —— 普通人一天认真读十几篇材料也到不了，够用且不像"施舍"
+//   free 1500/月 —— 兜住"每天刚好用满"的成本上限，约 ¥0.8/月/人
+//   pro  2000/天 —— 重度用户/写作者连续使用也不会撞墙
+//   pro  30000/月 —— 防止日额度被脚本攒成天量，同时远超真人可能
 const PLANS = {
-  free: { dailyLimit: 80, models: ['mimo-v2.6-flash'] },
-  pro: { dailyLimit: 2000, models: ['mimo-v2.6-flash', 'mimo-v2.6-pro'] }
+  free: { daily: 100, monthly: 1500, perMinute: 15, models: ['mimo-v2.6-flash'] },
+  pro: { daily: 2000, monthly: 30000, perMinute: 60, models: ['mimo-v2.6-flash', 'mimo-v2.6-pro'] }
 }
+
+// 匿名用户没有账号可记，按 IP 计，额度给得窄一些：够体验，不够长期白用
+const ANON = { daily: 20, monthly: 0, perMinute: 3, models: ['mimo-v2.6-flash'] }
 
 function planOf(user) {
   if (!user) return 'free'
@@ -118,7 +182,35 @@ function planOf(user) {
 
 function entitlements(user) {
   const plan = planOf(user)
-  return { plan, ...PLANS[plan] }
+  const p = PLANS[plan]
+  return { plan, dailyLimit: p.daily, monthlyLimit: p.monthly, perMinute: p.perMinute, models: p.models }
+}
+
+// 额度检查：按顺序返回第一个撞上的限制
+// 返回 { ok:true } 或 { ok:false, code, message }
+function checkQuota(user) {
+  const e = entitlements(user)
+  const u = usageOf(user)
+  if (u.dayN >= e.dailyLimit) {
+    const isPro = e.plan === 'pro'
+    return {
+      ok: false,
+      code: 'quota_daily',
+      message: isPro ? '今日额度已用完，明日 0 点重置' : '今日免费额度已用完，升级订阅可继续使用',
+      used: u.dayN,
+      limit: e.dailyLimit
+    }
+  }
+  if (e.monthlyLimit > 0 && u.monthN >= e.monthlyLimit) {
+    return {
+      ok: false,
+      code: 'quota_monthly',
+      message: e.plan === 'pro' ? '本月额度已用完' : '本月免费额度已用完，升级订阅可继续使用',
+      used: u.monthN,
+      limit: e.monthlyLimit
+    }
+  }
+  return { ok: true }
 }
 
 // ---- 对外操作 ----
@@ -129,14 +221,20 @@ function normalizeEmail(email) {
 
 function publicView(user) {
   const e = entitlements(user)
+  const u = usageOf(user)
   return {
     id: user.id,
     email: user.email,
     plan: e.plan,
     expireAt: user.expireAt || null,
+    // 旧字段保留，客户端老版本仍能显示"今日 x/y"
+    used: u.dayN,
     dailyLimit: e.dailyLimit,
+    usedMonth: u.monthN,
+    monthlyLimit: e.monthlyLimit,
+    perMinute: e.perMinute,
     models: e.models,
-    used: usedToday(user)
+    costMonth: round6(u.costMonth)
   }
 }
 
@@ -156,7 +254,7 @@ function register(email, password) {
     plan: 'free',
     expireAt: null,
     createdAt: Date.now(),
-    usage: { day: today(), n: 0 }
+    usage: { day: today(), dayN: 0, month: thisMonth(), monthN: 0, costDay: 0, costMonth: 0 }
   }
   db.users[mail] = user
   writeUsers()
@@ -279,8 +377,42 @@ function redeem(user, code) {
   return { user: publicView(user), days: rec.days }
 }
 
+// 金额小到 0.0005 这个量级，保留 6 位小数才看得见
+function round6(n) {
+  return Math.round((n || 0) * 1e6) / 1e6
+}
+
 function count() {
   return Object.keys(readUsers().users).length
+}
+
+// 运营视角的汇总：作者看一眼就知道今天的流量与花销
+function stats() {
+  const list = Object.values(readUsers().users)
+  let requestsToday = 0
+  let requestsMonth = 0
+  let costMonth = 0
+  let pro = 0
+  const top = []
+  for (const u of list) {
+    const x = usageOf(u)
+    requestsToday += x.dayN
+    requestsMonth += x.monthN
+    costMonth += x.costMonth
+    if (planOf(u) === 'pro') pro++
+    if (x.monthN > 0) top.push({ email: u.email, monthN: x.monthN, costMonth: x.costMonth })
+  }
+  top.sort((a, b) => b.monthN - a.monthN)
+  const round = round6
+  return {
+    users: list.length,
+    pro,
+    free: list.length - pro,
+    requestsToday,
+    requestsMonth,
+    costMonth: round(costMonth),
+    top: top.slice(0, 5).map((t) => ({ ...t, costMonth: round(t.costMonth) }))
+  }
 }
 
 module.exports = {
@@ -290,12 +422,18 @@ module.exports = {
   byId,
   redeem,
   bumpUsage,
+  addCost,
   usedToday,
+  usedThisMonth,
+  usageOf,
   entitlements,
   planOf,
+  checkQuota,
   publicView,
   count,
+  stats,
   mintCodes,
   codeStats,
-  PLANS
+  PLANS,
+  ANON
 }

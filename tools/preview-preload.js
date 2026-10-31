@@ -29,8 +29,12 @@ const USER = {
   plan: plan === 'free' ? 'free' : 'pro',
   planLabel: plan === 'free' ? '免费版' : '订阅版',
   used: 137,
-  dailyLimit: plan === 'free' ? 80 : 2000,
+  dailyLimit: plan === 'free' ? 100 : 2000,
   remaining: plan === 'free' ? 0 : 1863,
+  usedMonth: plan === 'free' ? 1240 : 137,
+  monthlyLimit: plan === 'free' ? 1500 : 30000,
+  remainingMonth: plan === 'free' ? 260 : 29863,
+  perMinute: plan === 'free' ? 15 : 60,
   models: plan === 'free' ? ['mimo-v2.6-flash'] : ['mimo-v2.6-flash', 'mimo-v2.6-pro'],
   expireAt: plan === 'free' ? null : Date.now() + 86400000 * 71,
   daysLeft: plan === 'free' ? null : 71

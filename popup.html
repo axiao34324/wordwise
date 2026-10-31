@@ -334,12 +334,14 @@
     el.className = 'err'
     el.textContent = '生成失败：' + (d.message || '未知错误')
     bodyEl.appendChild(el)
-    // 额度用完 / 需要订阅：就地给一个入口，省掉用户自己去翻设置这一步
+    // 额度撞墙 / 需要订阅：就地给一个入口，省掉用户自己去翻设置这一步
     const code = d.code || ''
-    if (code === 'quota_exhausted' || code === 'plan_required' || code === 'auth_required') {
+    const hittingQuota = /^(quota_daily|quota_monthly|quota_global|quota_exhausted)$/.test(code)
+    if (hittingQuota || code === 'plan_required') {
       const go = document.createElement('button')
       go.className = 'fix'
-      go.textContent = code === 'plan_required' ? '升级订阅 →' : '登录 / 兑换额度 →'
+      go.textContent =
+        code === 'plan_required' || code === 'quota_monthly' ? '升级订阅 →' : '登录 / 兑换额度 →'
       go.addEventListener('click', () => {
         window.ww.openAccount()
         window.ww.close()

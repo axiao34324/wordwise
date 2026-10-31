@@ -355,8 +355,10 @@
     try {
       const a = await window.settingsApi.accountState()
       $('accHint').textContent = a.loggedIn
-        ? a.email + ' · ' + (a.planLabel || '免费版') + ' · 今日 ' + (a.used || 0) + '/' + (a.dailyLimit || 0) + ' 次'
-        : '未登录 · 每天 20 次试用额度（登录后免费版 80 次/天）'
+        ? a.email + ' · ' + (a.planLabel || '免费版') +
+          ' · 今日 ' + (a.used || 0) + '/' + (a.dailyLimit || 0) +
+          (a.monthlyLimit ? ' · 本月 ' + (a.usedMonth || 0) + '/' + a.monthlyLimit : '')
+        : '未登录 · 每天 20 次试用额度（登录后免费版 100 次/天、1500 次/月）'
     } catch (_) {
       $('accHint').textContent = '未登录 · 每天 20 次试用额度'
     }
