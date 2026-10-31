@@ -23,7 +23,9 @@
 | POST | `/auth/login` | 登录，返回 `{ token, user }` |
 | GET | `/auth/me` | 查身份与今日用量（`x-ww-token` 头） |
 | POST | `/billing/redeem` | 兑换订阅码，返回升级后的 `user` |
-| GET | `/admin/stats` | 用户总数（需要客户端令牌） |
+| GET | `/admin/stats` | 用户总数 + 订阅码统计（需要客户端令牌） |
+| POST | `/admin/codes` | 签发订阅码 `{days,count}`（需要客户端令牌） |
+| GET | `/admin/codes` | 订阅码用量统计 |
 | POST | `/v1/chat/completions` | OpenAI 兼容的流式补全，这是客户端真正用的那个 |
 
 鉴权分两层：
@@ -44,6 +46,24 @@
 
 模型白名单在 `ALL_MODELS` 里。免费用户请求 pro 会拿到 `403 plan_required`，
 客户端据此弹出「升级订阅」入口。
+
+## 订阅码
+
+订阅码**一次性**，存在 `data/codes.json`。首次启动种三个试用码
+（`WW-30D-TRIAL` / `WW-90D-TRIAL` / `WW-365D-TRIAL`），各只能用一次 —— 写死在
+代码里的码谁都能猜到并反复使用，所以不能用那套。
+
+真实售卖时按订单签发：
+
+```bash
+curl -X POST "https://<你的域名>/admin/codes?sharecode=xxx" \
+  -H "Content-Type: application/json" \
+  -H "x-wordwise-key: <APP_TOKEN>" \
+  -d '{"days":30,"count":1}'
+# → {"codes":[{"code":"WW-30D-Z7FM-2GEX","days":30}],"stats":{...}}
+```
+
+重复兑换会**叠加**有效期，不是重置。
 
 ## 部署
 
@@ -66,5 +86,5 @@ MIMO_API_KEY=sk-xxx PORT=3000 node index.js
 - **账号存在 JSON 文件里**（`data/users.json`）。单实例、低并发够用，但多实例部署会
   出现写覆盖。用户量上来要换成真正的数据库。
 - **限流是进程内计数**（每 IP 每分钟 120 次）。重启即清零，多实例不共享。
-- **没有真实支付通道**。现在靠订阅码（`auth.js` 里的 `CODES`）人工发放，
-  接微信/支付宝商户号或 Lemon Squeezy 之后再补下单与回调。
+- **没有真实支付通道**。订阅码靠 `/admin/codes` 人工签发，接微信/支付宝商户号或
+  Lemon Squeezy 之后再补下单与回调 —— 那时候这个接口由支付回调调用，不再手动。

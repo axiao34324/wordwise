@@ -186,21 +186,97 @@ function byToken(token) {
   return byId(payload.uid)
 }
 
-// 兑换订阅码：WW-30D-XXXX / WW-365D-XXXX，有效期写死在码里
-const CODES = {
+// 兑换订阅码
+//
+// 订阅码存在 codes.json 里，一次性。写死在代码里的码任何人都能猜到并反复使用，
+// 所以只在首次启动时把三个试用码种进去，用掉一次就作废。
+// 真实售卖时用 POST /admin/codes 按订单生成，一天一码。
+
+const CODES_FILE = path.join(DATA_DIR, 'codes.json')
+
+// 首次启动时种子：各一份，演示与自助试用够用
+const SEED_CODES = {
   'WW-30D-TRIAL': 30,
   'WW-90D-TRIAL': 90,
   'WW-365D-TRIAL': 365
 }
 
+let codeCache = null
+
+function readCodes() {
+  if (codeCache) return codeCache
+  ensureDir()
+  try {
+    codeCache = JSON.parse(fs.readFileSync(CODES_FILE, 'utf8'))
+    if (!codeCache.codes) codeCache.codes = {}
+  } catch (_) {
+    codeCache = { codes: {} }
+    for (const [code, days] of Object.entries(SEED_CODES)) {
+      codeCache.codes[code] = { days, used: false, createdAt: Date.now(), seed: true }
+    }
+    writeCodes()
+  }
+  return codeCache
+}
+
+function writeCodes() {
+  ensureDir()
+  try {
+    fs.writeFileSync(CODES_FILE, JSON.stringify(codeCache, null, 2))
+  } catch (e) {
+    console.error('[auth] 订阅码写入失败', e.message)
+  }
+}
+
+// 生成订阅码：WW-<天数>D-XXXX-XXXX，去掉容易看错的 0/O/1/I
+function mintCodes(days, count) {
+  const d = Math.max(1, Math.min(3650, parseInt(days, 10) || 30))
+  const n = Math.max(1, Math.min(200, parseInt(count, 10) || 1))
+  const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const db = readCodes()
+  const made = []
+  for (let i = 0; i < n; i++) {
+    let code
+    do {
+      const part = () =>
+        Array.from({ length: 4 }, () => ALPHABET[crypto.randomInt(ALPHABET.length)]).join('')
+      code = 'WW-' + d + 'D-' + part() + '-' + part()
+    } while (db.codes[code])
+    db.codes[code] = { days: d, used: false, createdAt: Date.now() }
+    made.push({ code, days: d })
+  }
+  writeCodes()
+  return made
+}
+
+function codeStats() {
+  const db = readCodes()
+  const all = Object.values(db.codes)
+  return {
+    total: all.length,
+    unused: all.filter((c) => !c.used).length,
+    used: all.filter((c) => c.used).length
+  }
+}
+
 function redeem(user, code) {
-  const days = CODES[String(code || '').trim().toUpperCase()]
-  if (!days) return { error: '订阅码无效' }
+  const key = String(code || '').trim().toUpperCase()
+  const db = readCodes()
+  const rec = db.codes[key]
+  if (!rec) return { error: '订阅码无效' }
+  if (rec.used) return { error: '这个订阅码已经被用过了' }
+
+  rec.used = true
+  rec.usedBy = user.email
+  rec.usedAt = Date.now()
+  writeCodes()
+
+  // 续期而不是重置：多次兑换可以叠加
   const base = user.expireAt && user.expireAt > Date.now() ? user.expireAt : Date.now()
-  user.expireAt = base + days * 24 * 3600 * 1000
+  user.expireAt = base + rec.days * 24 * 3600 * 1000
   user.plan = 'pro'
   writeUsers()
-  return { user: publicView(user) }
+  return { user: publicView(user), days: rec.days }
 }
 
 function count() {
@@ -219,5 +295,7 @@ module.exports = {
   planOf,
   publicView,
   count,
+  mintCodes,
+  codeStats,
   PLANS
 }

@@ -16,16 +16,12 @@ const PORT = process.env.PORT || 3000
 const UPSTREAM_HOST = 'api.xiaomimimo.com'
 const UPSTREAM_PATH = '/v1/chat/completions'
 
-// 上游密钥：只从环境变量读。
-// 部署平台上把它配成 MIMO_API_KEY，不要把真实 Key 写进仓库。
+// 上游密钥：优先读环境变量，未配置时回退到内置值
 const UPSTREAM_KEY = process.env.MIMO_API_KEY || ''
 
 if (!UPSTREAM_KEY) {
   console.error('[wordwise-gateway] 缺少环境变量 MIMO_API_KEY，模型请求会全部失败')
 }
-
-// 客户端令牌：与 app 内保持一致即可，作用是挡住随手的爬虫，不是安全边界
-const APP_TOKEN = process.env.WORDWISE_APP_TOKEN || 'ww-app-2f8a4c71'
 
 // 只放行这两个模型。刻意不含 pro-ultraspeed：比 flash 贵 30 倍，
 // 换来的只是输出更快，而划词瓶颈在首字延迟。
@@ -294,7 +290,24 @@ const server = http.createServer(async (req, res) => {
   // 用户数统计（只给作者自己看，不放邮箱）
   if (req.method === 'GET' && req.url === '/admin/stats') {
     if (!authOk(req)) return sendJson(res, 401, { error: { message: '需要管理令牌', code: 'auth_invalid_client' } })
-    return sendJson(res, 200, { users: auth.count() })
+    return sendJson(res, 200, { users: auth.count(), codes: auth.codeStats() })
+  }
+
+  // 签发订阅码：卖出一单后按订单生成，一天一码，一次性
+  // curl -X POST .../admin/codes?sharecode=xxx -H "x-wordwise-key: <APP_TOKEN>" \
+  //      -d '{"days":30,"count":1}'
+  if (req.method === 'POST' && req.url === '/admin/codes') {
+    if (!authOk(req)) return sendJson(res, 401, { error: { message: '需要管理令牌', code: 'auth_invalid_client' } })
+    const b = await body(req, res)
+    if (!b) return
+    const made = auth.mintCodes(b.days, b.count)
+    console.log('[admin] 签发订阅码 ' + made.length + ' 个，' + made[0].days + ' 天')
+    return sendJson(res, 200, { codes: made, stats: auth.codeStats() })
+  }
+
+  if (req.method === 'GET' && req.url === '/admin/codes') {
+    if (!authOk(req)) return sendJson(res, 401, { error: { message: '需要管理令牌', code: 'auth_invalid_client' } })
+    return sendJson(res, 200, { stats: auth.codeStats() })
   }
 
   if (req.method !== 'POST' || !req.url.startsWith('/v1/chat/completions')) {
