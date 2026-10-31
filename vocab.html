@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>WordWise 英语词库</title>
+<script>document.documentElement.dataset.theme=(new URLSearchParams(location.search).get('theme'))||'rock'</script>
+<link rel="stylesheet" href="theme.css">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 13px;
+    line-height: 1.6;
+    overflow: hidden;
+  }
+  .top {
+    flex-shrink: 0;
+    padding: 10px 14px 8px;
+    border-bottom: 0.5px solid var(--border-soft);
+  }
+  .row1 { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .name { font-weight: 600; font-size: 13px; }
+  .count { font-size: 11px; color: var(--text-4); flex: 1; }
+  .tbtn {
+    background: transparent;
+    border: 0.5px solid var(--border);
+    color: var(--text-3);
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .tbtn:hover { background: var(--hover); color: var(--text); border-color: var(--text-4); }
+  .tbtn.danger:hover { color: var(--err); border-color: var(--err-border); background: var(--err-bg); }
+  input[type="text"] {
+    width: 100%;
+    background: var(--card-2);
+    border: 0.5px solid var(--border);
+    border-radius: 7px;
+    color: var(--text);
+    padding: 6px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+  }
+  input[type="text"]:focus { border-color: var(--accent-strong); }
+  input::placeholder { color: var(--text-4); }
+
+  .list { flex: 1; overflow-y: auto; padding: 8px 10px 12px; }
+  .list::-webkit-scrollbar { width: 7px; }
+  .list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  .list::-webkit-scrollbar-thumb:hover { background: var(--hover-strong); }
+
+  .item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 8px 10px;
+    border-radius: 7px;
+    margin-bottom: 3px;
+  }
+  .item:hover { background: var(--hover); }
+  .item .w { font-weight: 600; color: var(--accent-2); min-width: 96px; word-break: break-word; }
+  .item .d {
+    flex: 1;
+    color: var(--text-3);
+    font-size: 12px;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .item .del {
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: var(--text-4);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 0 4px;
+    border-radius: 3px;
+    line-height: 1.2;
+  }
+  .item .del:hover { color: var(--err); background: var(--border-soft); }
+
+  .empty {
+    margin: 60px auto 0;
+    text-align: center;
+    color: var(--text-4);
+    font-size: 12px;
+    line-height: 2;
+    max-width: 300px;
+  }
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    background: var(--accent-weak);
+    border: 0.5px solid var(--accent-line);
+    color: var(--accent-2);
+    font-size: 12px;
+    padding: 6px 14px;
+    border-radius: 7px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="row1">
+      <span class="name" id="name">我的词库</span>
+      <span class="count" id="count"></span>
+      <button class="tbtn" id="exportBtn">导出 CSV</button>
+      <button class="tbtn danger" id="clearBtn">清空</button>
+    </div>
+    <input type="text" id="search" placeholder="搜索单词或释义…">
+  </div>
+
+  <div class="list" id="list"></div>
+  <div class="toast" id="toast"></div>
+
+<script>
+  const listEl = document.getElementById('list')
+  const nameEl = document.getElementById('name')
+  const countEl = document.getElementById('count')
+  const searchEl = document.getElementById('search')
+  const toastEl = document.getElementById('toast')
+
+  let timer = null
+
+  function toast(msg) {
+    toastEl.textContent = msg
+    toastEl.classList.add('show')
+    clearTimeout(timer)
+    timer = setTimeout(() => toastEl.classList.remove('show'), 1800)
+  }
+
+  async function render(filter) {
+    const data = await window.vocabApi.list(filter || '')
+    nameEl.textContent = data.name || '我的词库'
+    countEl.textContent = data.words.length + ' 个词'
+    listEl.innerHTML = ''
+
+    if (!data.words.length) {
+      const d = document.createElement('div')
+      d.className = 'empty'
+      d.innerHTML = filter
+        ? '没有匹配的词条'
+        : '词库还是空的<br>在任意应用里划选英语单词，弹窗右上角点「＋词库」即可收录'
+      listEl.appendChild(d)
+      return
+    }
+
+    for (const item of data.words) {
+      const row = document.createElement('div')
+      row.className = 'item'
+
+      const w = document.createElement('div')
+      w.className = 'w'
+      w.textContent = item.w
+      w.title = item.w
+
+      const d = document.createElement('div')
+      d.className = 'd'
+      d.textContent = item.def || '（无释义）'
+      d.title = item.def || ''
+
+      const del = document.createElement('button')
+      del.className = 'del'
+      del.textContent = '✕'
+      del.title = '删除'
+      del.addEventListener('click', async () => {
+        await window.vocabApi.remove(item.w)
+        toast('已删除 ' + item.w)
+        render(searchEl.value)
+      })
+
+      row.appendChild(w)
+      row.appendChild(d)
+      row.appendChild(del)
+      listEl.appendChild(row)
+    }
+  }
+
+  searchEl.addEventListener('input', () => {
+    clearTimeout(timer)
+    timer = setTimeout(() => render(searchEl.value), 150)
+  })
+
+  document.getElementById('exportBtn').addEventListener('click', async () => {
+    const r = await window.vocabApi.exportCsv()
+    if (r.ok) toast('已导出 ' + r.count + ' 个词')
+    else if (r.error) toast('导出失败：' + r.error)
+  })
+
+  document.getElementById('clearBtn').addEventListener('click', async () => {
+    if (!confirm('确定清空整个词库？此操作不可撤销。')) return
+    await window.vocabApi.clear()
+    toast('词库已清空')
+    render(searchEl.value)
+  })
+
+  window.vocabApi.onTheme((t) => { document.documentElement.dataset.theme = t })
+
+  render('')
+</script>
+</body>
+</html>

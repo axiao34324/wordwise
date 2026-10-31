@@ -1,0 +1,175 @@
+/* WordWise 主题变量 — 所有窗口共用
+   切换方式：<html data-theme="rock|paper|graphite|celadon"> */
+
+:root {
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 12px;
+}
+
+/* ---------- 1. 深岩（默认）：冷灰蓝，长时间阅读不刺眼 ---------- */
+:root,
+[data-theme="rock"] {
+  color-scheme: dark;
+  --bg: #1A1C22;
+  --panel: #202229;
+  --card: #23252C;
+  --card-2: #22242B;
+  --card-3: #2C3038;
+  --border: #3A3F4A;
+  --border-soft: #2E323C;
+  --hover: #2A2E36;
+  --hover-strong: #3A4150;
+  --code-bg: #1B1E25;
+  --code-border: #333844;
+  --text: #E6E8EE;
+  --text-2: #C9CEDA;
+  --text-3: #9AA3B2;
+  --text-4: #6B7280;
+  --accent: #85B7EB;
+  --accent-2: #B5D4F4;
+  --accent-strong: #378ADD;
+  --accent-bg: #185FA5;
+  --accent-dim: #4C7BB5;
+  --accent-weak: #24303C;
+  --accent-line: #3A4E62;
+  --ok: #5DCAA5;
+  --warn: #FAC775;
+  --err: #F09595;
+  --err-bg: #2A1F1F;
+  --err-border: #5A3434;
+  --user-bubble: #1F4A6E;
+  --user-text: #EAF2FA;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- 2. 宣纸：浅色纸感，适合白天 / 明亮环境 ---------- */
+[data-theme="paper"] {
+  color-scheme: light;
+  --bg: #F6F3EC;
+  --panel: #EFEBE2;
+  --card: #FFFDF8;
+  --card-2: #F4F0E7;
+  --card-3: #EBE5D9;
+  --border: #D8D0C0;
+  --border-soft: #E4DDD0;
+  --hover: #EDE7DB;
+  --hover-strong: #E2DACB;
+  --code-bg: #F1ECE1;
+  --code-border: #DDD5C6;
+  --text: #2B2A26;
+  --text-2: #4A4740;
+  --text-3: #726C60;
+  --text-4: #9A9385;
+  --accent: #8A6A3B;
+  --accent-2: #6F5330;
+  --accent-strong: #A07A42;
+  --accent-bg: #8A6A3B;
+  --accent-dim: #B99767;
+  --accent-weak: #F0E7D6;
+  --accent-line: #D9C7A6;
+  --ok: #4F8A6B;
+  --warn: #B07C33;
+  --err: #C0564F;
+  --err-bg: #F8E7E5;
+  --err-border: #E4C3BF;
+  --user-bubble: #8A6A3B;
+  --user-text: #FFFDF8;
+  --shadow: 0 8px 24px rgba(80, 66, 44, 0.14);
+  --shadow-lg: 0 12px 32px rgba(80, 66, 44, 0.2);
+}
+
+/* ---------- 3. 石墨：纯黑 + 琥珀，极简暗房 ---------- */
+[data-theme="graphite"] {
+  color-scheme: dark;
+  --bg: #0B0B0C;
+  --panel: #121214;
+  --card: #17171A;
+  --card-2: #1C1C1F;
+  --card-3: #232327;
+  --border: #2E2E33;
+  --border-soft: #202024;
+  --hover: #232327;
+  --hover-strong: #2C2C32;
+  --code-bg: #101012;
+  --code-border: #2A2A2F;
+  --text: #F3F3F5;
+  --text-2: #C9C9CF;
+  --text-3: #8C8C94;
+  --text-4: #5E5E66;
+  --accent: #E8B058;
+  --accent-2: #F2CB8C;
+  --accent-strong: #F0BE6E;
+  --accent-bg: #B8873A;
+  --accent-dim: #8A6A32;
+  --accent-weak: #2A2318;
+  --accent-line: #4A3C24;
+  --ok: #7BD3A8;
+  --warn: #E8B058;
+  --err: #E8837C;
+  --err-bg: #2A1A19;
+  --err-border: #54302D;
+  --user-bubble: #3E3218;
+  --user-text: #F7E9CE;
+  --shadow: 0 8px 26px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.7);
+}
+
+/* ---------- 4. 青瓷：墨绿 + 青，低饱和东方感 ---------- */
+[data-theme="celadon"] {
+  color-scheme: dark;
+  --bg: #0F1A17;
+  --panel: #14231E;
+  --card: #172A24;
+  --card-2: #1A2E27;
+  --card-3: #21382F;
+  --border: #2C473C;
+  --border-soft: #213730;
+  --hover: #21382F;
+  --hover-strong: #2B483C;
+  --code-bg: #111E1A;
+  --code-border: #274034;
+  --text: #E6F1EB;
+  --text-2: #C3D8CD;
+  --text-3: #8BA89C;
+  --text-4: #5E7A6E;
+  --accent: #6FD3B4;
+  --accent-2: #A6E7D2;
+  --accent-strong: #8FE0C6;
+  --accent-bg: #2F7F67;
+  --accent-dim: #3E7B68;
+  --accent-weak: #1E3A32;
+  --accent-line: #2F5248;
+  --ok: #6FD3B4;
+  --warn: #D8BE7A;
+  --err: #E0918C;
+  --err-bg: #24201E;
+  --err-border: #4E3A38;
+  --user-bubble: #2A5548;
+  --user-text: #E9FBF4;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* ---- 全局滚动条：跟随主题（页面内更具体的规则会覆盖它） ---- */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--hover-strong);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

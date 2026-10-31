@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>document.documentElement.dataset.theme=(new URLSearchParams(location.search).get('theme'))||'rock'</script>
+<link rel="stylesheet" href="theme.css">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
@@ -13,14 +15,14 @@
   }
   .card {
     margin: 6px;
-    background: #23252C;
-    border: 0.5px solid #3A3F4A;
+    background: var(--card);
+    border: 0.5px solid var(--border);
     border-radius: 10px;
     padding: 12px 14px 10px;
-    color: #E6E8EE;
+    color: var(--text);
     font-size: 13px;
     line-height: 1.65;
-    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    box-shadow: var(--shadow);
   }
   .head {
     display: flex;
@@ -28,13 +30,13 @@
     gap: 8px;
     margin-bottom: 8px;
     padding-bottom: 8px;
-    border-bottom: 0.5px solid #3A3F4A;
+    border-bottom: 0.5px solid var(--border);
   }
   .term {
     flex: 1;
     font-size: 13px;
     font-weight: 600;
-    color: #E6E8EE;
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -43,37 +45,56 @@
   .btn {
     border: none;
     background: transparent;
-    color: #9AA3B2;
+    color: var(--text-3);
     font-size: 11px;
     padding: 2px 6px;
     border-radius: 4px;
     cursor: pointer;
   }
-  .btn:hover { background: #2E323C; color: #E6E8EE; }
+  .btn:hover { background: var(--border-soft); color: var(--text); }
+  .btn.vocab { display: none; color: var(--accent); }
+  .btn.vocab:hover { background: var(--accent-weak); color: var(--accent-2); }
+  .btn.vocab:disabled { color: var(--ok); cursor: default; }
+  .btn.vocab:disabled:hover { background: transparent; color: var(--ok); }
   .body {
     min-height: 22px;
     max-height: 300px;
     overflow-y: auto;
-    color: #C9CEDA;
+    color: var(--text-2);
     -webkit-user-select: text;
     word-break: break-word;
   }
   .body::-webkit-scrollbar { width: 6px; }
   .body::-webkit-scrollbar-track { background: transparent; }
-  .body::-webkit-scrollbar-thumb { background: #3A3F4A; border-radius: 3px; }
-  .body::-webkit-scrollbar-thumb:hover { background: #4A5060; }
+  .body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .body::-webkit-scrollbar-thumb:hover { background: var(--text-4); }
   .body .caret {
     display: inline-block;
     width: 2px;
     height: 14px;
-    background: #85B7EB;
+    background: var(--accent);
     vertical-align: -2px;
     margin-left: 1px;
     animation: blink 0.9s steps(1) infinite;
   }
   @keyframes blink { 50% { opacity: 0; } }
-  .placeholder { color: #9AA3B2; }
-  .err { color: #F09595; }
+  .placeholder { color: var(--text-3); }
+  .err { color: var(--err); }
+  /* 额度用完时的就地入口：比让用户自己去翻设置少一步 */
+  .fix {
+    display: block;
+    width: fit-content;
+    margin-top: 10px;
+    padding: 5px 10px;
+    font-size: 11.5px;
+    font-family: inherit;
+    color: var(--accent);
+    background: var(--accent-weak);
+    border: 0.5px solid var(--accent-dim);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .fix:hover { background: var(--hover-strong); color: var(--accent-2); }
 
   /* ---- 长文本动作选择 ---- */
   .preview {
@@ -81,7 +102,7 @@
     position: relative;
     max-height: 50px;
     overflow: hidden;
-    color: #8A93A3;
+    color: var(--text-3);
     font-size: 12px;
     line-height: 1.55;
     word-break: break-word;
@@ -92,7 +113,7 @@
     position: absolute;
     left: 0; right: 0; bottom: 0;
     height: 18px;
-    background: linear-gradient(transparent, #23252C);
+    background: linear-gradient(transparent, var(--card));
   }
   .opts { display: none; gap: 6px; margin-top: 10px; }
   /* 自定义需求入口：伪装成输入框，点击打开对话窗口（弹窗本身无焦点，不能直接打字） */
@@ -102,50 +123,32 @@
     gap: 6px;
     margin-top: 8px;
     padding: 6px 9px;
-    background: #22242B;
-    border: 0.5px solid #3A3F4A;
+    background: var(--card-2);
+    border: 0.5px solid var(--border);
     border-radius: 7px;
     cursor: pointer;
     transition: border-color .12s, background .12s;
   }
-  .ask:hover { border-color: #4C7BB5; background: #262A32; }
-  .ask .ph { flex: 1; font-size: 12px; color: #5F6675; }
-  .ask:hover .ph { color: #9AA3B2; }
-  .ask .go { font-size: 11px; color: #6B7280; }
-  .ask:hover .go { color: #85B7EB; }
+  .ask:hover { border-color: var(--accent-dim); background: var(--hover); }
+  .ask .ph { flex: 1; font-size: 12px; color: var(--text-4); }
+  .ask:hover .ph { color: var(--text-3); }
+  .ask .go { font-size: 11px; color: var(--text-4); }
+  .ask:hover .go { color: var(--accent); }
   .opt {
     flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-    padding: 6px 2px 5px;
-    background: #2C3038;
-    border: 0.5px solid #3A3F4A;
+    padding: 7px 2px;
+    background: var(--card-3);
+    border: 0.5px solid var(--border);
     border-radius: 7px;
-    color: #C9CEDA;
+    color: var(--text-2);
     font-size: 12px;
     font-family: inherit;
     cursor: pointer;
     transition: background .12s, border-color .12s;
   }
-  .opt:hover { background: #35404F; border-color: #4C7BB5; color: #fff; }
-  .opt .h { font-size: 10px; color: #6B7280; }
-  .opt:hover .h { color: #9AA3B2; }
+  .opt:hover { background: var(--hover-strong); border-color: var(--accent-dim); color: #fff; }
 
-  .foot {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 8px;
-    font-size: 11px;
-    color: #6B7280;
-    -webkit-user-select: none;
-  }
-  .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: #5DCAA5; margin-right: 5px; vertical-align: 1px; }
-  .dot.cache { background: #FAC775; }
-  .dot.err { background: #F09595; }
-  .dot.busy { background: #85B7EB; }
+  .dot.busy { background: var(--accent); }
 </style>
 </head>
 <body>
@@ -153,6 +156,7 @@
     <div class="head">
       <div class="term" id="term"></div>
       <div class="actions">
+        <button class="btn vocab" id="vocabBtn" title="收进英语词库">＋词库</button>
         <button class="btn" id="copyBtn" title="复制结果">复制</button>
         <button class="btn" id="closeBtn" title="关闭">✕</button>
       </div>
@@ -160,16 +164,14 @@
     <div class="preview" id="preview"></div>
     <div class="opts" id="opts"></div>
     <div class="ask" id="ask">
-      <span class="ph">或输入你的需求，围绕这段文字提问…</span>
+      <span class="ph">输入你的需求…</span>
       <span class="go">对话 →</span>
     </div>
     <div class="body" id="body"><span class="placeholder">正在生成释义…</span></div>
-    <div class="foot" id="foot"><span id="status"></span><span>点击外部关闭</span></div>
   </div>
 <script>
   const termEl = document.getElementById('term')
   const bodyEl = document.getElementById('body')
-  const statusEl = document.getElementById('status')
   const previewEl = document.getElementById('preview')
   const optsEl = document.getElementById('opts')
   const card = document.getElementById('card')
@@ -178,8 +180,22 @@
   let mode = 'loading'
   let labels = {}
   let chooseText = ''
+  let isWordSel = false
+  let currentTerm = ''
 
   const askEl = document.getElementById('ask')
+  const vocabBtn = document.getElementById('vocabBtn')
+
+  function resetVocabBtn() {
+    vocabBtn.style.display = 'none'
+    vocabBtn.disabled = false
+    vocabBtn.textContent = '＋词库'
+  }
+
+  function showVocabBtn() {
+    if (!isWordSel) return
+    vocabBtn.style.display = 'inline-block'
+  }
 
   function render(text, streaming) {
     bodyEl.innerHTML = ''
@@ -226,6 +242,8 @@
     mode = 'choose'
     fullText = ''
     labels = {}
+    isWordSel = !!d.isWord
+    resetVocabBtn()
     chooseText = d.text || ''
     previewEl.textContent = d.text
     previewEl.style.display = 'block'
@@ -236,13 +254,7 @@
       const b = document.createElement('button')
       b.className = 'opt'
       b.dataset.action = a.id
-      const main = document.createElement('span')
-      main.textContent = a.label
-      const hint = document.createElement('span')
-      hint.className = 'h'
-      hint.textContent = a.hint || ''
-      b.appendChild(main)
-      b.appendChild(hint)
+      b.textContent = a.label
       b.addEventListener('click', () => {
         if (mode !== 'choose') return
         startLoading(a.id)
@@ -253,7 +265,6 @@
     optsEl.style.display = 'flex'
     askEl.style.display = 'flex'
     setTerm('已选 ' + d.chars + ' 字')
-    statusEl.innerHTML = '<span class="dot busy"></span>选择要执行的操作'
     reportSize()
   })
 
@@ -266,7 +277,6 @@
     ph.className = 'placeholder'
     ph.textContent = (labels[action] || '生成') + '中…'
     bodyEl.appendChild(ph)
-    statusEl.innerHTML = '<span class="dot busy"></span>AI 生成中'
     reportSize()
   }
 
@@ -274,6 +284,9 @@
   window.ww.onLoading((d) => {
     mode = 'loading'
     fullText = ''
+    isWordSel = !!d.isWord
+    currentTerm = d.text || ''
+    resetVocabBtn()
     hideChooser()
     const label = d.action && d.action !== 'explain' ? labels[d.action] : ''
     setTerm((label ? label + ' · ' : '') + d.text)
@@ -282,18 +295,19 @@
     ph.className = 'placeholder'
     ph.textContent = '正在生成' + (label || '释义') + '…'
     bodyEl.appendChild(ph)
-    statusEl.innerHTML = '<span class="dot busy"></span>AI 生成中'
     reportSize()
   })
 
   window.ww.onResult((d) => {
     mode = 'done'
     fullText = d.result
+    isWordSel = !!d.isWord
+    currentTerm = d.text || ''
     const label = d.action && d.action !== 'explain' ? labels[d.action] : ''
     setTerm((label ? label + ' · ' : '') + d.text)
     showResultView()
     render(d.result, false)
-    statusEl.innerHTML = '<span class="dot cache"></span>本地缓存 · 秒出'
+    showVocabBtn()
     reportSize()
   })
 
@@ -308,7 +322,7 @@
     if (mode === 'error') return
     mode = 'done'
     render(fullText, false)
-    statusEl.innerHTML = '<span class="dot"></span>完成'
+    showVocabBtn()
     reportSize()
   })
 
@@ -320,11 +334,34 @@
     el.className = 'err'
     el.textContent = '生成失败：' + (d.message || '未知错误')
     bodyEl.appendChild(el)
-    statusEl.innerHTML = '<span class="dot err"></span>错误'
+    // 额度用完 / 需要订阅：就地给一个入口，省掉用户自己去翻设置这一步
+    const code = d.code || ''
+    if (code === 'quota_exhausted' || code === 'plan_required' || code === 'auth_required') {
+      const go = document.createElement('button')
+      go.className = 'fix'
+      go.textContent = code === 'plan_required' ? '升级订阅 →' : '登录 / 兑换额度 →'
+      go.addEventListener('click', () => {
+        window.ww.openAccount()
+        window.ww.close()
+      })
+      bodyEl.appendChild(go)
+    }
     reportSize()
   })
 
   document.getElementById('closeBtn').addEventListener('click', () => window.ww.close())
+
+  // 收进英语词库
+  vocabBtn.addEventListener('click', () => {
+    if (vocabBtn.disabled) return
+    if (!currentTerm || !fullText) return
+    window.ww.addVocab(currentTerm, fullText)
+  })
+
+  window.ww.onVocabResult((d) => {
+    vocabBtn.textContent = d.added ? '已收录' : '已在库'
+    vocabBtn.disabled = true
+  })
 
   // 自定义需求 → 打开独立对话窗口，划词内容作为上下文
   askEl.addEventListener('click', () => {
@@ -340,6 +377,7 @@
   })
 
   window.addEventListener('load', reportSize)
+  window.ww.onTheme((t) => { document.documentElement.dataset.theme = t })
 </script>
 </body>
 </html>

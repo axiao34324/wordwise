@@ -1,11 +1,16 @@
 import ctypes, struct, zlib, sys
 
+# 截取指定标题的 WordWise 窗口（PNG 输出）
+# 用法：python shot_win.py out.png [标题关键字]
+
 user32 = ctypes.windll.user32
 gdi32 = ctypes.windll.gdi32
-PW_CLIENTONLY = 1
+PW_CLIENTONLY = 0  # 0 = 含标题栏，能看到原生外框颜色
 
-# 找 WordWise 设置 窗口
+keyword = sys.argv[2] if len(sys.argv) > 2 else '设置'
+
 target_hwnd = None
+found = []
 def enum_cb(hwnd, lparam):
     global target_hwnd
     if not user32.IsWindowVisible(hwnd):
@@ -16,7 +21,8 @@ def enum_cb(hwnd, lparam):
         user32.GetWindowTextW(hwnd, buf, length + 1)
         if 'WordWise' in buf.value:
             print('found window:', hwnd, repr(buf.value))
-            if '设置' in buf.value or 'Settings' in buf.value:
+            found.append(buf.value)
+            if keyword in buf.value or ('设置' == keyword and 'Settings' in buf.value):
                 target_hwnd = hwnd
     return True
 
@@ -24,7 +30,7 @@ EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.POINTER(ctypes.c_int)
 user32.EnumWindows(EnumWindowsProc(enum_cb), 0)
 
 if not target_hwnd:
-    print('NOT_FOUND')
+    print('NOT_FOUND, visible titles =', found)
     sys.exit(1)
 
 class RECT(ctypes.Structure):

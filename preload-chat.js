@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('chatApi', {
+  onTheme: (cb) => ipcRenderer.on('ww:theme', (_e, t) => cb(t)),
   onLoad: (cb) => ipcRenderer.on('chat:load', (_e, id) => cb(id)),
   onShowHistory: (cb) => ipcRenderer.on('chat:showHistory', () => cb()),
   onDelta: (cb) => ipcRenderer.on('chat:delta', (_e, d) => cb(d)),

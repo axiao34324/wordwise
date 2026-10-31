@@ -1,16 +1,21 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, screen, ipcMain, clipboard, dialog } = require('electron')
+const { app, BrowserWindow, Tray, Menu, nativeImage, screen, ipcMain, clipboard, dialog, nativeTheme } = require('electron')
 const path = require('path')
 const SelectionHook = require('selection-hook')
 
 const store = require('./lib/store')
 const cache = require('./lib/cache')
 const llm = require('./lib/llm')
+const official = require('./lib/official')
+const account = require('./lib/account')
 const convs = require('./lib/conversations')
+const vocab = require('./lib/vocab')
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_e, argv) => {
+    // 允许用 `WordWise.exe --account` 从快捷方式直接打开账号页
+    if ((argv || []).includes('--account')) return openAccount()
     openSettings()
   })
 }
@@ -26,7 +31,10 @@ let popup = null
 let settingsWin = null
 let chatWin = null
 let chatCtrl = null
+let vocabWin = null
+let accountWin = null
 let hook = null
+let rebuildTray = null
 
 let debounceTimer = null
 let hideTimer = null
@@ -38,7 +46,38 @@ let lastAt = 0
 let currentSel = null
 
 const POPUP_W = 360
-const POPUP_H_DEFAULT = 132
+const POPUP_H_DEFAULT = 112
+
+// 窗口加载时带上当前主题，避免首帧闪烁
+function themeQuery() {
+  return { query: { theme: store.get().theme || 'rock' } }
+}
+
+// 各主题的窗口底色：用于原生标题栏明暗与窗口背景（避免浅色主题下边框仍是深色）
+const THEME_BG = { rock: '#1A1C22', paper: '#F6F3EC', graphite: '#0B0B0C', celadon: '#0F1A17' }
+
+function themeBg(theme) {
+  return THEME_BG[theme] || THEME_BG.rock
+}
+
+function applyNativeTheme(theme) {
+  const t = THEME_BG[theme] ? theme : 'rock'
+  // Windows 原生标题栏随之变亮/变暗
+  nativeTheme.themeSource = t === 'paper' ? 'light' : 'dark'
+  const bg = themeBg(t)
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (w.isDestroyed()) continue
+    try { w.setBackgroundColor(bg) } catch (_) {}
+  }
+}
+
+function broadcastTheme(theme) {
+  applyNativeTheme(theme)
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (w.isDestroyed()) continue
+    try { w.webContents.send('ww:theme', theme) } catch (_) {}
+  }
+}
 
 function getIcon() {
   const p = path.join(__dirname, 'assets', 'icon.png')
@@ -96,7 +135,7 @@ function createPopupWindow() {
   })
   popup.setAlwaysOnTop(true, 'screen-saver')
   attachDiagnostics(popup, 'popup')
-  popup.loadFile(path.join(__dirname, 'popup.html'))
+  popup.loadFile(path.join(__dirname, 'popup.html'), themeQuery())
   popup.on('ready-to-show', () => { popupReady = true })
   popup.on('close', (e) => {
     if (!app.isQuitting) {
@@ -155,10 +194,22 @@ function isDisabledApp(programName, list) {
   })
 }
 
+// 判断是否值得收进英语词库：纯英文（可含空格/连字符/撇号），1-3 个词，≤40 字符
+function isEnglishWord(text) {
+  const t = String(text || '').trim()
+  if (t.length < 2 || t.length > 40) return false
+  if (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(t)) return false // 含中日韩字符或全角符号
+  if (!/^[A-Za-z][A-Za-z'’\-\s]*$/.test(t)) return false // 只允许字母/撇号/连字符/空格
+  const parts = t.split(/\s+/).filter(Boolean)
+  if (parts.length < 1 || parts.length > 3) return false
+  return parts.every((p) => /^[A-Za-z][A-Za-z'’\-]*$/.test(p))
+}
+
 function handleSelection(data) {
   const s = store.get()
   if (!s.enabled) return
-  if (!s.apiKey) return
+  // 官方通道不需要用户填 key；只有自带 Key 模式才必须配好
+  if (s.provider === 'byok' && !s.apiKey) return
   const text = String((data && data.text) || '').trim()
   if (!text || text.length < 2 || text.length > (s.maxLen || 300)) return
   if (isDisabledApp(data.programName, s.disabledApps)) return
@@ -212,7 +263,7 @@ function trigger(text, data) {
   if (isLong) {
     // 长文本：先给动作选项，不消耗 API；选择窗给更长的停留时间
     console.log('[ww] long text (' + text.length + ' > ' + threshold + '), show chooser')
-    send('ww:choose', { text, chars: text.length, threshold, actions: llm.ACTIONS })
+    send('ww:choose', { text, chars: text.length, threshold, actions: llm.ACTIONS, isWord: isEnglishWord(text) })
     scheduleHide(Math.max(30, s.hideAfterSec || 15))
     return
   }
@@ -221,26 +272,54 @@ function trigger(text, data) {
 }
 
 // 统一执行入口：短词（explain）与用户选中的长文本动作共用
+// 决定本次请求用哪套接口配置与模型
+//   official（默认）—— 官方通道，接口地址与密钥内置在 lib/official.js
+//   byok             —— 用户自己的 OpenAI 兼容服务
+function llmTarget(s, action) {
+  if (s.provider === 'byok') {
+    return {
+      baseUrl: s.baseUrl,
+      apiKey: s.apiKey,
+      model: action === 'explain' ? s.model : s.actionModel || s.model
+    }
+  }
+  return {
+    baseUrl: official.BASE_URL,
+    apiKey: official.APP_TOKEN,
+    // 转发服务挂在分享网关后面，Authorization 会被网关消费，改用自定义头
+    authHeader: 'x-wordwise-key',
+    // 登录用户的身份令牌：带上它走个人额度，不带就是匿名额度
+    token: account.token(),
+    model:
+      action === 'explain'
+        ? s.officialModel || official.MODEL
+        : s.officialActionModel || official.ACTION_MODEL
+  }
+}
+
 function runAction(action, text) {
   const s = store.get()
-  // 短词释义用主模型（ultraspeed，快）；长文本动作默认用 flash（长文本更省更快）
-  const model = action === 'explain' ? s.model : (s.actionModel || s.model)
+  const target = llmTarget(s, action)
+  const model = target.model
   const send = (ch, payload) => {
     try { popup.webContents.send(ch, payload) } catch (_) {}
   }
   const key = action + '::' + text
+  const isWord = isEnglishWord(text)
   const hit = cache.get(key)
   if (hit) {
-    send('ww:result', { text, action, result: hit.v, cached: true, model })
+    send('ww:result', { text, action, result: hit.v, cached: true, model, isWord })
     return
   }
 
   abortPending()
-  send('ww:loading', { text, action })
+  send('ww:loading', { text, action, isWord })
   pendingCtrl = new AbortController()
   llm.explain({
-    baseUrl: s.baseUrl,
-    apiKey: s.apiKey,
+    baseUrl: target.baseUrl,
+    apiKey: target.apiKey,
+    authHeader: target.authHeader,
+    token: target.token,
     model,
     action,
     systemPrompt: s.systemPrompt,
@@ -253,8 +332,16 @@ function runAction(action, text) {
     onDone: (r) => {
       cache.set(key, r)
       send('ww:done', { model })
+      // 服务端已计数，本地也 +1，让托盘与账号页的用量立刻对上
+      account.bumpLocal()
+      if (rebuildTray) rebuildTray()
     },
-    onError: (e) => send('ww:error', { message: String((e && e.message) || e) })
+    onError: (e) =>
+      send('ww:error', {
+        message: String((e && e.message) || e),
+        // 额度用完 / 需要订阅 时，弹窗可以就地给一个「去登录」的口子
+        code: (e && e.code) || ''
+      })
   })
 }
 
@@ -298,17 +385,27 @@ function createTray() {
 
   const rebuild = () => {
     const s = store.get()
+    const a = account.state()
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: s.enabled ? '暂停划词释义' : '启用划词释义', click: () => { store.save({ enabled: !s.enabled }); rebuild(); if (!store.get().enabled) hidePopup() } },
         { type: 'separator' },
+        {
+          label: a.loggedIn
+            ? '账号与订阅（' + (a.planLabel || '免费版') + ' · 今日 ' + (a.used || 0) + '/' + (a.dailyLimit || 0) + '）'
+            : '账号与订阅（未登录）',
+          click: () => openAccount()
+        },
         { label: '历史对话…', click: () => openChat({}, true) },
+        { label: '英语词库…', click: () => openVocab() },
         { label: '设置…', click: () => openSettings() },
         { label: '退出', click: () => { app.isQuitting = true; app.quit() } }
       ])
     )
   }
   rebuild()
+  // 额度会随使用变化，主进程在每次请求结束后刷新一次托盘文案
+  rebuildTray = rebuild
   tray.on('double-click', () => openSettings())
 }
 
@@ -338,7 +435,7 @@ function openChat(seed, showHistory) {
     minWidth: 360,
     minHeight: 400,
     title: 'WordWise 对话',
-    backgroundColor: '#1A1C22',
+    backgroundColor: themeBg(store.get().theme),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload-chat.js'),
@@ -348,7 +445,7 @@ function openChat(seed, showHistory) {
     }
   })
   attachDiagnostics(chatWin, 'chat')
-  chatWin.loadFile(path.join(__dirname, 'chat.html'))
+  chatWin.loadFile(path.join(__dirname, 'chat.html'), themeQuery())
   const targetId = conv.id
   chatWin.webContents.once('did-finish-load', () => {
     try { chatWin.webContents.send('chat:load', targetId) } catch (_) {}
@@ -362,6 +459,64 @@ function openChat(seed, showHistory) {
   })
 }
 
+function openVocab() {
+  if (vocabWin && !vocabWin.isDestroyed()) {
+    vocabWin.show()
+    vocabWin.focus()
+    return
+  }
+  vocabWin = new BrowserWindow({
+    width: 480,
+    height: 620,
+    minWidth: 380,
+    minHeight: 380,
+    title: 'WordWise 英语词库',
+    backgroundColor: themeBg(store.get().theme),
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-vocab.js'),
+      contextIsolation: true,
+      sandbox: false,
+      nodeIntegration: false
+    }
+  })
+  attachDiagnostics(vocabWin, 'vocab')
+  vocabWin.loadFile(path.join(__dirname, 'vocab.html'), themeQuery())
+  vocabWin.on('closed', () => { vocabWin = null })
+}
+
+function openAccount() {
+  if (accountWin && !accountWin.isDestroyed()) {
+    accountWin.show()
+    accountWin.focus()
+    // 从别的入口再次打开时，让页面重跑一次 boot()，拿到最新额度
+    try { accountWin.webContents.send('ww:theme', store.get().theme) } catch (_) {}
+    try { accountWin.webContents.reload() } catch (_) {}
+    return
+  }
+  accountWin = new BrowserWindow({
+    width: 460,
+    height: 660,
+    minWidth: 380,
+    minHeight: 480,
+    title: 'WordWise 账号',
+    autoHideMenuBar: true,
+    backgroundColor: themeBg(store.get().theme),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-account.js'),
+      contextIsolation: true,
+      sandbox: false,
+      nodeIntegration: false
+    }
+  })
+  attachDiagnostics(accountWin, 'account')
+  accountWin.loadFile(path.join(__dirname, 'account.html'), themeQuery())
+  accountWin.on('closed', () => {
+    accountWin = null
+    if (rebuildTray) rebuildTray()
+  })
+}
+
 function openSettings() {
   console.log('[ww] openSettings called')
   if (settingsWin) {
@@ -370,11 +525,11 @@ function openSettings() {
     return
   }
   settingsWin = new BrowserWindow({
-    width: 520,
+    width: 560,
     height: 800,
     title: 'WordWise 设置',
     autoHideMenuBar: true,
-    backgroundColor: '#1A1C22',
+    backgroundColor: themeBg(store.get().theme),
     webPreferences: {
       preload: path.join(__dirname, 'preload-settings.js'),
       contextIsolation: true,
@@ -383,7 +538,7 @@ function openSettings() {
     }
   })
   attachDiagnostics(settingsWin, 'settings')
-  settingsWin.loadFile(path.join(__dirname, 'settings.html'))
+  settingsWin.loadFile(path.join(__dirname, 'settings.html'), themeQuery())
   settingsWin.on('closed', () => { settingsWin = null })
 }
 
@@ -391,6 +546,8 @@ app.whenReady().then(() => {
   const s = store.get()
   cache.load()
   convs.load()
+  // 启动即按已保存主题设置原生标题栏明暗，避免浅色主题下首帧仍是深色标题栏
+  applyNativeTheme(s.theme)
   app.setLoginItemSettings({ openAtLogin: !!s.autoStart })
   store.onAutoStart((next) => {
     app.setLoginItemSettings({ openAtLogin: !!next.autoStart })
@@ -404,9 +561,16 @@ app.whenReady().then(() => {
     dialog.showErrorBox('WordWise', '全局划词初始化失败：' + e.message)
   }
 
-  if (!s.apiKey) {
-    openSettings()
+  // 已登录的话后台静默拉一次额度，把托盘文案更新成真实值；
+  // 官方通道开箱即用，不再像自带 Key 时代那样首次启动就弹设置页。
+  if (account.token()) {
+    account.refresh().then((r) => {
+      if (r.ok && rebuildTray) rebuildTray()
+    })
   }
+
+  // `--account` 直接开账号页：方便做桌面快捷方式，也方便排查登录问题
+  if (process.argv.includes('--account')) openAccount()
 })
 
 app.on('before-quit', () => {
@@ -448,12 +612,96 @@ ipcMain.on('ww:copy', (_e, text) => {
   if (typeof text === 'string' && text) clipboard.writeText(text)
 })
 
+// ---- 英语词库 ----
+ipcMain.on('ww:addVocab', (_e, payload) => {
+  const word = String((payload && payload.word) || '').trim()
+  const def = String((payload && payload.def) || '').trim()
+  if (!word) return
+  const r = vocab.add(word, def)
+  console.log('[ww:vocab] add', word, '| added =', r.added, '| total =', r.count)
+  try { popup.webContents.send('ww:vocabResult', { word, ...r }) } catch (_) {}
+})
+
+ipcMain.on('ww:openVocab', () => openVocab())
+
+// ---- 账号与订阅 ----
+ipcMain.on('ww:openAccount', () => openAccount())
+ipcMain.handle('account:state', () => account.state())
+ipcMain.handle('account:register', async (_e, payload) => {
+  const r = await account.register(
+    String((payload && payload.email) || '').trim(),
+    String((payload && payload.password) || '')
+  )
+  if (r.ok) {
+    // 等服务端累计一个真实的 user 对象再回界面，避免额度显示成 0/0
+    const m = await account.refresh()
+    if (m.ok) r.user = m.user
+    if (rebuildTray) rebuildTray()
+  }
+  return r
+})
+ipcMain.handle('account:login', async (_e, payload) => {
+  const r = await account.login(
+    String((payload && payload.email) || '').trim(),
+    String((payload && payload.password) || '')
+  )
+  if (r.ok) {
+    const m = await account.refresh()
+    if (m.ok) r.user = m.user
+    if (rebuildTray) rebuildTray()
+  }
+  return r
+})
+ipcMain.handle('account:refresh', async () => {
+  const r = await account.refresh()
+  if (rebuildTray) rebuildTray()
+  return r
+})
+ipcMain.handle('account:redeem', async (_e, code) => {
+  const r = await account.redeem(String(code || '').trim())
+  if (r.ok && rebuildTray) rebuildTray()
+  return r
+})
+ipcMain.handle('account:logout', () => {
+  account.logout()
+  if (rebuildTray) rebuildTray()
+  return true
+})
+
+ipcMain.handle('vocab:list', (_e, filter) => vocab.list(filter))
+ipcMain.handle('vocab:count', () => vocab.count())
+ipcMain.handle('vocab:remove', (_e, w) => {
+  vocab.remove(w)
+  return vocab.list('')
+})
+ipcMain.handle('vocab:clear', () => {
+  vocab.clear()
+  return vocab.list('')
+})
+ipcMain.handle('vocab:export', async () => {
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    title: '导出词库',
+    defaultPath: 'wordwise-vocab.csv',
+    filters: [{ name: 'CSV', extensions: ['csv'] }]
+  })
+  if (canceled || !filePath) return { ok: false }
+  try {
+    require('fs').writeFileSync(filePath, '\ufeff' + vocab.toCSV(), 'utf8')
+    return { ok: true, path: filePath, count: vocab.count() }
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) }
+  }
+})
+
 ipcMain.handle('settings:get', () => ({ ...store.get(), apiKey: store.get().apiKey ? '____set____' : '' }))
 ipcMain.handle('settings:getRaw', () => store.get())
 ipcMain.handle('settings:save', (_e, patch) => {
   const clean = { ...patch }
   if (clean.apiKey === '____set____') delete clean.apiKey
+  const before = store.get().theme
   store.save(clean)
+  const theme = store.get().theme
+  if (theme && theme !== before) broadcastTheme(theme)
   return store.get()
 })
 
@@ -487,12 +735,15 @@ ipcMain.on('chat:send', (_e, payload) => {
   if (chatCtrl) { try { chatCtrl.abort('new-turn') } catch (_) {} }
   chatCtrl = new AbortController()
 
+  // 划词文本必须作为独立的 user 消息注入，并跟一轮 assistant 确认。
+  // 只放进 system 当"描述"时，模型会把它当元指令，反而回答"我看不到你划的内容"
   const sys =
-    '用户在阅读时划选了下面这段文本，后续问题都围绕它展开：\n"""\n' +
-    conv.text +
-    '\n"""\n\n请结合这段文本回答用户的问题。回答简洁直接、重点突出；不要复述原文，不要客套，不要使用「根据您提供的文本」这类套话。'
+    '你是阅读助手。用户在应用里划选了一段文本并交给了你，文本在下一条消息中，已完整提供。' +
+    '回答简洁直接、重点突出；不要复述原文，不要客套，不要使用「根据您提供的文本」这类套话。'
   const messages = [
     { role: 'system', content: sys },
+    { role: 'user', content: '【我划选的文本】\n"""\n' + conv.text + '\n"""' },
+    { role: 'assistant', content: '已收到，请问。' },
     ...convs.get(convId).messages.map((m) => ({ role: m.role, content: m.content }))
   ]
 
@@ -502,11 +753,14 @@ ipcMain.on('chat:send', (_e, payload) => {
     }
   }
 
-  console.log('[ww:chat] send, turns =', messages.length - 1, '| model =', s.actionModel || s.model)
+  const target = llmTarget(s, 'chat')
+  console.log('[ww:chat] send, turns =', messages.length - 1, '| model =', target.model)
   llm.explain({
-    baseUrl: s.baseUrl,
-    apiKey: s.apiKey,
-    model: s.actionModel || s.model,
+    baseUrl: target.baseUrl,
+    apiKey: target.apiKey,
+    authHeader: target.authHeader,
+    token: target.token,
+    model: target.model,
     messages,
     temperature: s.temperature,
     maxTokens: s.maxTokens,
@@ -516,7 +770,13 @@ ipcMain.on('chat:send', (_e, payload) => {
     onDone: (r) => {
       convs.setLastAssistant(convId, r)
       push('chat:done', { content: r })
+      account.bumpLocal()
+      if (rebuildTray) rebuildTray()
     },
-    onError: (err) => push('chat:error', { message: String((err && err.message) || err) })
+    onError: (err) =>
+      push('chat:error', {
+        message: String((err && err.message) || err),
+        code: (err && err.code) || ''
+      })
   }).finally(() => { chatCtrl = null })
 })
