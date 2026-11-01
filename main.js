@@ -9,6 +9,8 @@ const official = require('./lib/official')
 const account = require('./lib/account')
 const convs = require('./lib/conversations')
 const vocab = require('./lib/vocab')
+const todos = require('./lib/todos')
+const foreground = require('./lib/foreground')
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -16,6 +18,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', (_e, argv) => {
     // 允许用 `WordWise.exe --account` 从快捷方式直接打开账号页
     if ((argv || []).includes('--account')) return openAccount()
+    if ((argv || []).includes('--todo')) return openTodo()
     openSettings()
   })
 }
@@ -32,7 +35,9 @@ let settingsWin = null
 let chatWin = null
 let chatCtrl = null
 let vocabWin = null
+let todoWin = null
 let accountWin = null
+let todoCtrl = null
 let hook = null
 let rebuildTray = null
 
@@ -253,7 +258,7 @@ function trigger(text, data) {
   const pos = { x: Math.round(raw.x / scale), y: Math.round(raw.y / scale) }
   console.log('[ww] popup at', JSON.stringify(pos), '(raw', JSON.stringify(raw), 'scale', scale + ')')
 
-  currentSel = { text, pos }
+  currentSel = { text, pos, app: String((data && data.programName) || '') }
   showPopupAt(pos.x, pos.y)
 
   const send = (ch, payload) => {
@@ -396,6 +401,8 @@ function createTray() {
   const rebuild = () => {
     const s = store.get()
     const a = account.state()
+    let openN = 0
+    try { openN = todos.countOpen() } catch (_) { openN = 0 }
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: s.enabled ? '暂停划词释义' : '启用划词释义', click: () => { store.save({ enabled: !s.enabled }); rebuild(); if (!store.get().enabled) hidePopup() } },
@@ -408,6 +415,7 @@ function createTray() {
         },
         { label: '历史对话…', click: () => openChat({}, true) },
         { label: '英语词库…', click: () => openVocab() },
+        { label: openN ? '待办（' + openN + ' 条未完成）…' : '待办…', click: () => openTodo() },
         { label: '设置…', click: () => openSettings() },
         { label: '退出', click: () => { app.isQuitting = true; app.quit() } }
       ])
@@ -493,6 +501,37 @@ function openVocab() {
   attachDiagnostics(vocabWin, 'vocab')
   vocabWin.loadFile(path.join(__dirname, 'vocab.html'), themeQuery())
   vocabWin.on('closed', () => { vocabWin = null })
+}
+
+function openTodo() {
+  if (todoWin && !todoWin.isDestroyed()) {
+    todoWin.show()
+    todoWin.focus()
+    // 窗口开着的时候可能在别处又收了几条，回来重绘一次
+    try { todoWin.webContents.send('todo:changed') } catch (_) {}
+    return
+  }
+  todoWin = new BrowserWindow({
+    width: 540,
+    height: 720,
+    minWidth: 420,
+    minHeight: 420,
+    title: 'WordWise 待办',
+    backgroundColor: themeBg(store.get().theme),
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-todo.js'),
+      contextIsolation: true,
+      sandbox: false,
+      nodeIntegration: false
+    }
+  })
+  attachDiagnostics(todoWin, 'todo')
+  todoWin.loadFile(path.join(__dirname, 'todo.html'), themeQuery())
+  todoWin.on('closed', () => {
+    todoWin = null
+    if (todoCtrl) { try { todoCtrl.abort('window-closed') } catch (_) {} todoCtrl = null }
+  })
 }
 
 function openAccount() {
@@ -581,6 +620,8 @@ app.whenReady().then(() => {
 
   // `--account` 直接开账号页：方便做桌面快捷方式，也方便排查登录问题
   if (process.argv.includes('--account')) openAccount()
+  // 同理，`--todo` 直接开待办（也是自测入口：能确认窗口、preload、IPC 全通）
+  if (process.argv.includes('--todo')) openTodo()
 })
 
 app.on('before-quit', () => {
@@ -633,6 +674,149 @@ ipcMain.on('ww:addVocab', (_e, payload) => {
 })
 
 ipcMain.on('ww:openVocab', () => openVocab())
+
+// ---- 待办 ----
+//
+// 与词库最大的不同：加待办不需要先把内容看懂，也不消耗额度。
+// 所以这里只做两件事 —— 把选中文字抄下来、把来源记下来，然后立刻回话。
+ipcMain.on('ww:openTodo', () => openTodo())
+
+function notifyTodoChanged() {
+  if (todoWin && !todoWin.isDestroyed()) {
+    try { todoWin.webContents.send('todo:changed') } catch (_) {}
+  }
+  if (rebuildTray) rebuildTray()
+}
+
+ipcMain.on('ww:addTodo', (_e, payload) => {
+  if (!currentSel) return
+  const def = String((payload && payload.def) || '')
+  const r = todos.add({
+    text: currentSel.text,
+    def,
+    source: { app: currentSel.app || '' }
+  })
+  try { popup.webContents.send('ww:todoResult', r) } catch (_) {}
+  notifyTodoChanged()
+  if (!r.item) return
+
+  // 窗口标题异步补。这一步要起一次 PowerShell（约 1 秒），
+  // 绝不能挡在按钮反馈前面，所以先回话、后补字段。
+  const id = r.item.id
+  foreground
+    .capture()
+    .then((f) => {
+      if (!f || !f.title) return
+      todos.update(id, { source: { title: f.title } })
+      notifyTodoChanged()
+    })
+    .catch(() => {})
+})
+
+ipcMain.handle('todo:list', (_e, opts) => todos.list(opts || {}))
+ipcMain.handle('todo:stats', () => todos.stats())
+ipcMain.handle('todo:update', (_e, p) => {
+  const it = todos.update((p && p.id) || '', (p && p.patch) || {})
+  if (rebuildTray) rebuildTray()
+  return it
+})
+ipcMain.handle('todo:remove', (_e, id) => {
+  todos.remove(id)
+  notifyTodoChanged()
+  return true
+})
+ipcMain.handle('todo:purge', () => {
+  const removed = todos.purgeArchived()
+  notifyTodoChanged()
+  return { removed }
+})
+ipcMain.handle('todo:addList', (_e, name) => todos.addList(name))
+ipcMain.handle('todo:removeList', (_e, id) => {
+  todos.removeList(id)
+  notifyTodoChanged()
+  return true
+})
+ipcMain.handle('todo:export', async () => {
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    title: '导出待办',
+    defaultPath: 'wordwise-todo.md',
+    filters: [{ name: 'Markdown', extensions: ['md'] }]
+  })
+  if (canceled || !filePath) return { ok: false }
+  try {
+    require('fs').writeFileSync(filePath, todos.toMarkdown(), 'utf8')
+    return { ok: true, path: filePath }
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) }
+  }
+})
+
+// 「回顾一下」：用户几天后打开待办时，只剩一个碎片，想不起为什么存它。
+// 这里才真正调用模型 —— 加待办永远不花额度，回顾才花，由用户自己决定值不值。
+const RECAP_PROMPT =
+  '用户在阅读时摘下一段文字存进了待办，现在回来想知道它值不值得深入。' +
+  '用中文写三句话，每句一行、以「· 」开头：' +
+  '第一句说这段在讲什么（不要复述原话，直接给判断）；' +
+  '第二句说它大概属于哪个领域或脉络，可以跟什么放在一起看；' +
+  '第三句给一个具体可执行的深挖方向（查什么、读谁、看哪一面）。' +
+  '不要客套，不要标题，不要评价这段话写得好不好。'
+
+ipcMain.on('todo:recap', (_e, id) => {
+  const it = todos.find(String(id || ''))
+  const push = (ch, d) => {
+    if (todoWin && !todoWin.isDestroyed()) {
+      try { todoWin.webContents.send(ch, d) } catch (_) {}
+    }
+  }
+  if (!it) return
+
+  const s = store.get()
+  if (s.provider !== 'byok' && !account.token()) {
+    push('todo:recapError', {
+      id,
+      message: '官方通道需要登录；不登录的话，可以在设置里选「自带 Key」用自己的服务',
+      code: 'auth_required'
+    })
+    return
+  }
+
+  const target = llmTarget(s, 'recap')
+  if (todoCtrl) { try { todoCtrl.abort('new-recap') } catch (_) {} }
+  todoCtrl = new AbortController()
+
+  let user = '【原文】\n"""\n' + it.text + '\n"""'
+  if (it.note) user += '\n\n【我当时的备注】\n' + it.note
+  if (it.source && it.source.title) user += '\n\n【来自】\n' + it.source.title
+
+  console.log('[ww:todo] recap', it.id, '| len =', it.text.length, '| model =', target.model)
+  llm.explain({
+    baseUrl: target.baseUrl,
+    apiKey: target.apiKey,
+    authHeader: target.authHeader,
+    token: target.token,
+    model: target.model,
+    messages: [
+      { role: 'system', content: RECAP_PROMPT },
+      { role: 'user', content: user }
+    ],
+    temperature: 0.5,
+    maxTokens: 420,
+    timeoutSec: s.timeoutSec,
+    ctrl: todoCtrl,
+    onDelta: (d) => push('todo:recapDelta', { id, chunk: d }),
+    onDone: (r) => {
+      push('todo:recapDone', { id, text: r })
+      account.bumpLocal()
+      if (rebuildTray) rebuildTray()
+    },
+    onError: (err) =>
+      push('todo:recapError', {
+        id,
+        message: String((err && err.message) || err),
+        code: (err && err.code) || ''
+      })
+  }).finally(() => { todoCtrl = null })
+})
 
 // ---- 账号与订阅 ----
 ipcMain.on('ww:openAccount', () => openAccount())

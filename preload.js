@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld('ww', {
   openAccount: () => ipcRenderer.send('ww:openAccount'),
   addVocab: (word, def) => ipcRenderer.send('ww:addVocab', { word, def }),
   onVocabResult: (cb) => ipcRenderer.on('ww:vocabResult', (_e, d) => cb(d)),
+  addTodo: (payload) => ipcRenderer.send('ww:addTodo', payload || {}),
+  onTodoResult: (cb) => ipcRenderer.on('ww:todoResult', (_e, d) => cb(d)),
+  openTodo: () => ipcRenderer.send('ww:openTodo'),
   resize: (h) => ipcRenderer.send('ww:resize', h),
   close: () => ipcRenderer.send('ww:close'),
   copy: (t) => ipcRenderer.send('ww:copy', t)

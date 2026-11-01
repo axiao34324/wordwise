@@ -56,6 +56,42 @@
   .btn.vocab:hover { background: var(--accent-weak); color: var(--accent-2); }
   .btn.vocab:disabled { color: var(--ok); cursor: default; }
   .btn.vocab:disabled:hover { background: transparent; color: var(--ok); }
+  /* 待办：做成小胶囊而不是纯文字按钮。
+     「复制 / ✕」是即时工具，「＋待办」是唯一会把内容留在应用里的动作，
+     视觉上要能被一眼找到，又不能盖过正文。 */
+  .btn.todo {
+    color: var(--text-2);
+    border: 0.5px solid var(--border);
+    padding: 1px 8px;
+    border-radius: 20px;
+    transition: color .12s, border-color .12s, background .12s;
+  }
+  .btn.todo:hover { color: var(--accent); border-color: var(--accent-dim); background: var(--accent-weak); }
+  .btn.todo:disabled { color: var(--ok); border-color: transparent; background: transparent; cursor: default; }
+  .btn.todo:disabled:hover { color: var(--ok); border-color: transparent; background: transparent; }
+  /* 存入后的那一行：只出现一次，给出条数和入口 */
+  .saved {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    margin-top: 9px;
+    padding-top: 8px;
+    border-top: 0.5px solid var(--border-soft);
+    font-size: 11px;
+    color: var(--text-4);
+  }
+  .saved .go {
+    margin-left: auto;
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-size: 11px;
+    font-family: inherit;
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .saved .go:hover { text-decoration: underline; }
   .body {
     min-height: 22px;
     max-height: 300px;
@@ -157,6 +193,7 @@
       <div class="term" id="term"></div>
       <div class="actions">
         <button class="btn vocab" id="vocabBtn" title="收进英语词库">＋词库</button>
+        <button class="btn todo" id="todoBtn" title="先收下，回头再看">＋待办</button>
         <button class="btn" id="copyBtn" title="复制结果">复制</button>
         <button class="btn" id="closeBtn" title="关闭">✕</button>
       </div>
@@ -168,6 +205,10 @@
       <span class="go">对话 →</span>
     </div>
     <div class="body" id="body"><span class="placeholder">正在生成释义…</span></div>
+    <div class="saved" id="saved">
+      <span id="savedText"></span>
+      <button class="go" id="savedGo">查看 →</button>
+    </div>
   </div>
 <script>
   const termEl = document.getElementById('term')
@@ -185,6 +226,9 @@
 
   const askEl = document.getElementById('ask')
   const vocabBtn = document.getElementById('vocabBtn')
+  const todoBtn = document.getElementById('todoBtn')
+  const savedEl = document.getElementById('saved')
+  const savedText = document.getElementById('savedText')
 
   function resetVocabBtn() {
     vocabBtn.style.display = 'none'
@@ -195,6 +239,16 @@
   function showVocabBtn() {
     if (!isWordSel) return
     vocabBtn.style.display = 'inline-block'
+  }
+
+  // 待办：每次新选区都复位。注意只在「选区开始」时复位，
+  // 不能在 onDone 里复位 —— 用户可能正在流式生成时就把这条收下了
+  function resetTodo() {
+    todoBtn.disabled = false
+    todoBtn.textContent = '＋待办'
+    todoBtn.title = '先收下，回头再看'
+    savedEl.style.display = 'none'
+    savedText.textContent = ''
   }
 
   function render(text, streaming) {
@@ -244,6 +298,7 @@
     labels = {}
     isWordSel = !!d.isWord
     resetVocabBtn()
+    resetTodo()
     chooseText = d.text || ''
     previewEl.textContent = d.text
     previewEl.style.display = 'block'
@@ -287,6 +342,7 @@
     isWordSel = !!d.isWord
     currentTerm = d.text || ''
     resetVocabBtn()
+    resetTodo()
     hideChooser()
     const label = d.action && d.action !== 'explain' ? labels[d.action] : ''
     setTerm((label ? label + ' · ' : '') + d.text)
@@ -363,6 +419,39 @@
   window.ww.onVocabResult((d) => {
     vocabBtn.textContent = d.added ? '已收录' : '已在库'
     vocabBtn.disabled = true
+  })
+
+  // 收进待办：不需要等结果出完，也不消耗任何额度 —— 只是把文字和来源抄下来
+  todoBtn.addEventListener('click', () => {
+    if (todoBtn.disabled) return
+    // 只在结果已经完整时把释义一起存下；流式中的半截句子存了反而是噪音
+    const def = mode === 'done' && fullText ? fullText : ''
+    todoBtn.disabled = true
+    todoBtn.textContent = '存入中…'
+    window.ww.addTodo({ def })
+  })
+
+  window.ww.onTodoResult((d) => {
+    const r = d || {}
+    if (r.error) {
+      todoBtn.textContent = '＋待办'
+      todoBtn.disabled = false
+      savedEl.style.display = 'flex'
+      savedText.textContent = '存入失败：' + r.error
+      reportSize()
+      return
+    }
+    todoBtn.disabled = true
+    todoBtn.textContent = r.dup ? '已在待办' : '已存入'
+    savedEl.style.display = 'flex'
+    savedText.textContent =
+      (r.dup ? '这条已经在待办里了' : '已存入待办') + ' · 共 ' + (r.count || 0) + ' 条未完成'
+    reportSize()
+  })
+
+  document.getElementById('savedGo').addEventListener('click', () => {
+    window.ww.openTodo()
+    window.ww.close()
   })
 
   // 自定义需求 → 打开独立对话窗口，划词内容作为上下文

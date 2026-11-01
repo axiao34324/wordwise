@@ -6,7 +6,9 @@ contextBridge.exposeInMainWorld('settingsApi', {
   save: (patch) => ipcRenderer.invoke('settings:save', patch),
   openChat: () => ipcRenderer.send('ww:openChatHistory'),
   openVocab: () => ipcRenderer.send('ww:openVocab'),
+  openTodo: () => ipcRenderer.send('ww:openTodo'),
   openAccount: () => ipcRenderer.send('ww:openAccount'),
   accountState: () => ipcRenderer.invoke('account:state'),
-  vocabCount: () => ipcRenderer.invoke('vocab:count')
+  vocabCount: () => ipcRenderer.invoke('vocab:count'),
+  todoStats: () => ipcRenderer.invoke('todo:stats')
 })

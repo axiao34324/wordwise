@@ -298,6 +298,10 @@
     <div></div>
   </div>
 
+  <h2>待办</h2>
+  <div class="hint">划词后点弹窗里的「＋待办」，原文和来源自动记下；不用写任何东西，也不消耗额度</div>
+  <button class="ghost" id="openTodoBtn">打开待办（<span id="todoCount">0</span> 条未完成）</button>
+
   <h2>英语词库</h2>
   <div class="hint">划选英文单词时，弹窗出现「＋词库」按钮</div>
   <button class="ghost" id="openVocabBtn">打开词库（<span id="vocabCount">0</span> 个词）</button>
@@ -390,6 +394,10 @@
     try {
       const n = await window.settingsApi.vocabCount()
       $('vocabCount').textContent = n
+    } catch (_) {}
+    try {
+      const t = await window.settingsApi.todoStats()
+      $('todoCount').textContent = (t && t.open) || 0
     } catch (_) {}
 
     // 账号卡：身份 + 今日/本月额度，一眼看完
@@ -494,6 +502,7 @@
 
   document.getElementById('openChatBtn').addEventListener('click', () => window.settingsApi.openChat())
   document.getElementById('openVocabBtn').addEventListener('click', () => window.settingsApi.openVocab())
+  document.getElementById('openTodoBtn').addEventListener('click', () => window.settingsApi.openTodo())
   document.getElementById('openAccountBtn').addEventListener('click', () => window.settingsApi.openAccount())
 
   load()
